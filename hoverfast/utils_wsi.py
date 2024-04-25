@@ -7,7 +7,7 @@ import ujson
 from functools import partial
 from PIL import Image
 import torch
-from .hoverunet import HoverUNet
+from .hoverfast import HoverFast
 import scipy.ndimage as ndi
 import cv2
 import math
@@ -30,9 +30,9 @@ def magnification_from_mpp(mpp):
 
 def load_model(model_path, device):
     checkpoint = torch.load(model_path, map_location=lambda storage, loc: storage)
-    model = HoverUNet(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
+    model = HoverFast(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
                       padding=checkpoint["padding"], depth=checkpoint["depth"], wf=checkpoint["wf"],
-                      up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"]).to(device, memory_format=torch.channels_last)
+                      up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"], conv_block=checkpoint["conv_block"]).to(device, memory_format=torch.channels_last)
     model.load_state_dict(checkpoint["model_dict"])
     model = model.half()  # Convert the model to float16
     model.eval()
@@ -370,7 +370,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,
 
 
 def main_wsi(args) -> None:
-
+    
     #get args
 
     slide_dirs = args.slide_folder

@@ -6,7 +6,7 @@ import ujson
 from functools import partial
 from PIL import Image
 import torch
-from .hoverunet import HoverUNet
+from .hoverfast import HoverFast
 import scipy.ndimage as ndi
 import cv2
 import math
@@ -24,9 +24,9 @@ import time
 
 def load_model(model_path,device):
     checkpoint = torch.load(model_path, map_location=lambda storage, loc: storage)
-    model = HoverUNet(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
+    model = HoverFast(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
              padding=checkpoint["padding"], depth=checkpoint["depth"], wf=checkpoint["wf"],
-             up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"]).to(device)
+             up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"], conv_block=checkpoint["conv_block"]).to(device, memory_format=torch.channels_last)
     model.load_state_dict(checkpoint["model_dict"])
     model = model.half()  # Convert the model to float16
     model.eval()
@@ -200,8 +200,6 @@ def infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,mo
     arg_list = processing(regions, names,model,device,batch_to_gpu)
     multiproc(partial(post_processing,outdir=outdir,threshold=threshold,poly_simplify_tolerance=poly_simplify_tolerance,color=color,width=width),arg_list,n_process,output=False)
 
-
-
 def main_roi(args) -> None:
 
     #get args
@@ -245,6 +243,7 @@ def main_roi(args) -> None:
 
     #load model
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+    torch.backends.cudnn.benchmark=True
     model = load_model(model_path,device)
 
     #get input files

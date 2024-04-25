@@ -8,7 +8,7 @@ from albumentations import *
 import numpy as np
 import skimage.morphology as ndi
 from skimage.measure import regionprops
-from .hoverunet import HoverUNet
+from .hoverfast import HoverFast
 from .augment import *
 from torch.utils.data import DataLoader
 from .training_utils import *
@@ -153,13 +153,14 @@ def main_train(args) -> None:
     num_epochs = args.epoch
     depth = args.depth       #depth of the network 
     wf = args.width           #wf (int): number of filters in the first layer is 2**wf, was 6
+    up_mode = args.up_mode
+    conv_block = args.conv_block
 
     # --- unet params
     #these parameters get fed directly into the UNET class, and more description of them can be discovered there
     n_classes= 2    #number of classes in the data mask that we'll aim to predict
     in_channels= 3  #input channel of the data, RGB = 3
     padding= True   #should levels be padded
-    up_mode= 'upconv' #should we simply upsample the mask, or should we try and learn an interpolation 
     batch_norm = True #should we use batch normalization between the layers
 
     # --- training params
@@ -169,7 +170,7 @@ def main_train(args) -> None:
     grad_weight,hv_weight,dice_weight,crossentropy_weight=(1/10,14,1/6,1) #weight for the different loss
     torch.backends.cudnn.benchmark=True
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-    model = HoverUNet(n_classes=n_classes, in_channels=in_channels, padding=padding,depth=depth,wf=wf, up_mode=up_mode, batch_norm=batch_norm).to(device, memory_format=torch.channels_last)
+    model = HoverFast(n_classes=n_classes, in_channels=in_channels, padding=padding,depth=depth,wf=wf, up_mode=up_mode, batch_norm=batch_norm, conv_block=conv_block).to(device, memory_format=torch.channels_last)
 
     dataset={}
     dataLoader={}
@@ -280,7 +281,9 @@ def main_train(args) -> None:
             'padding': padding,
             'depth': depth,
             'wf': wf,
-            'up_mode': up_mode, 'batch_norm': batch_norm}
+            'up_mode': up_mode,
+            'batch_norm': batch_norm,
+            'conv_block': conv_block }
 
 
             torch.save(state, f"{dataname}_best_model.pth")

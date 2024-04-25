@@ -2,7 +2,7 @@ import argparse
 import torch
 from .utils_wsi import *
 from .training_utils import *
-from .hoverunet import *
+from .hoverfast import *
 from .utils_roi import *
 
 
@@ -147,6 +147,14 @@ def get_args():
                         help="width of the model",
                         default=4,
                         type=int)
+    train_parser.add_argument('-c', '--conv_block',
+                        help="Choose from which model should the convolutionnal blovk be based on (unet or msunet).",
+                        choices=['unet', 'msunet'],
+                        default="msunet")
+    train_parser.add_argument('-u', '--up_mode',
+                        help="simply upsample the mask (upsample), or should the model try and learn an interpolation (upconv)",
+                        choices=['upconv', 'upsample'],
+                        default='upconv')
     
     args = parser.parse_args()
 
@@ -170,5 +178,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    
     main()
