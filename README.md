@@ -68,7 +68,7 @@ HoverFast infer_wsi path/to/slides/*.svs -m hoverfast_crosstissue_best_model.pth
 
 - **Example Command with binary masks**
 
-Although HoverFast does have a simple threshold based tissue detection, we highly recommend the use of QC tools such as HistoQC for generating tissue masks to avoid computing on artefactual regions and reducing computation time
+Although HoverFast does have a simple threshold based tissue detection, we highly recommend the use of QC tools such as HistoQC for generating tissue masks to avoid computing on artefactual regions and reducing computation time.
 You can give the path to the directory where the masks are stored. HoverFast will search for a mask with the same name as the slide with a .png extension.
 
 ```
