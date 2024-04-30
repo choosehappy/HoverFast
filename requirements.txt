@@ -9,7 +9,7 @@ scikit-image
 openslide-python==1.3.1
 torchmetrics
 tables
-albumentations>=1.2.1
+albumentations==1.2.1
 tensorboard
 tensorboardx
 matplotlib
