@@ -79,8 +79,8 @@ def make_maps(label):
         if (ymin==0)|(xmin==0)|(ymax==label.shape[0])|(xmax==label.shape[1]):
             weight[ymin:ymax,xmin:xmax] = 0
         else:
-            maps[0,ymin:ymax,xmin:xmax] = rg.image * np.linspace(-1,1,shape[1])
-            maps[1,ymin:ymax,xmin:xmax] = rg.image * np.linspace(-1,1,shape[0]).reshape((shape[0],1))
+            maps[0,ymin:ymax,xmin:xmax] += rg.image * np.linspace(-1,1,shape[1])
+            maps[1,ymin:ymax,xmin:xmax] += rg.image * np.linspace(-1,1,shape[0]).reshape((shape[0],1))
     return maps,weight
 
 def dice_loss(pred, true, smooth=1e-3):
