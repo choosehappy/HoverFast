@@ -1,6 +1,6 @@
 # HoverFast :microscope: :fast_forward:
 
-Welcome to the official documentation for HoverFast, a high-performance tool designed for efficient nuclei segmentation in Whole Slide Images (WSIs).
+Welcome to the official documentation for HoverFast, a high-performance tool designed for efficient nuclear segmentation in Whole Slide Images (WSIs).
 
 ## Overview
 
