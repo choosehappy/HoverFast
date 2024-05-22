@@ -152,9 +152,7 @@ def main_train(args) -> None:
     n_process = min(batch_size,os.cpu_count())
     num_epochs = args.epoch
     depth = args.depth       #depth of the network 
-    wf = args.width           #wf (int): number of filters in the first layer is 2**wf, was 6
-    up_mode = args.up_mode
-    conv_block = args.conv_block
+    wf = args.width           #wf (int): number of filters in the first layer is 2**wf
 
     # --- unet params
     #these parameters get fed directly into the UNET class, and more description of them can be discovered there
@@ -162,6 +160,8 @@ def main_train(args) -> None:
     in_channels= 3  #input channel of the data, RGB = 3
     padding= True   #should levels be padded
     batch_norm = True #should we use batch normalization between the layers
+    up_mode = 'upconv' # 'upconv' for a transpose convolution for the decoding branch or 'upsample' for simple interpolation
+    conv_block = "msunet" # either ['unet', 'msunet'] for the convolutionnal block to use, see HoverFast class for more information
 
     # --- training params
     edge_weight = 1.1 #edges tend to be the most poorly segmented given how little area they occupy in the training set, this paramter boosts their values along the lines of the original UNET paper
