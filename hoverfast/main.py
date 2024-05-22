@@ -144,7 +144,7 @@ def get_args():
                         default=3,
                         type=int)
     train_parser.add_argument('-w', '--width',
-                        help="depth of the model: define the number of filter in first layer (2**w) following with a exponential groth rate respective to the depth of the model.",
+                        help="width of the model: define the number of filter in first layer (2**w) following with a exponential groth rate respective to the depth of the model.",
                         default=4,
                         type=int)
     
