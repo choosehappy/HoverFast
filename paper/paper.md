@@ -132,7 +132,7 @@ To compare computational speed, n=4 slides from TCGA with corresponding tissue m
 
 HoverFast represents a practical solution to the challenge of nuclear segmentation in WSIs, emphasizing speed, resource efficiency and local trainability. It distinguishes itself by providing a significant speedup in processing time with a 21x improvement over HoverNet on consumer grade hardware in addition to a more than 3x reduction in RAM footprint while also eliminating hard-drive based caching. This efficiency is crucial for users with limited resources, enabling faster analysis while retaining segmentation results highly comparable to  those of HoverNet.
 While a pre-trained cross-tissue model is provided with the software, if higher accuracy and greater similarity to HoverNet is required, a cohort specific model should be trained. Additionally, although HoverFast does have a built-in feature for tissue detection, we highly recommend the use of quality control tools, such as HistoQC to obtain more robust tissue masks, thus avoiding computation on artefactual regions and further reducing computation time.
-HoverFast is easy to install and provides simple drag and drop output compatibility with QuPath. It is publicly available for use and modification at hoverfast.com.
+HoverFast is easy to install and provides simple drag and drop output compatibility with QuPath. It is publicly available for use and modification at [andrewjanowczyk.com/open-source-tools/hoverfast](andrewjanowczyk.com/open-source-tools/hoverfast).
 
 
 ## Appendix 1
