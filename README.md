@@ -44,7 +44,7 @@ conda activate HoverFast
 - **Install HoverFast**
 ```
 git clone https://github.com/choosehappy/HoverFast.git
-cd HoverFastMultipross
+cd HoverFast
 pip install .
 ```
 
