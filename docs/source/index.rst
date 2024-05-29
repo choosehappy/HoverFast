@@ -29,7 +29,6 @@ For that reason, we highly recommend looking into other tools such as HistoQC (h
 
 
 .. toctree::
-   :maxdepth: 3
    :caption: Contents:
 
    installation
