@@ -30,5 +30,21 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
+html_theme = 'furo'
 html_static_path = ['_static']
+
+# Options for the Furo theme
+html_theme_options = {
+    "light_logo": "images/hoverfast_logo.png",
+    "dark_logo": "images/hoverfast_logo.png", 
+}
+
+# Add custom JavaScript to set dark mode as default
+html_js_files = [
+    'set_default_dark_mode.js',
+]
+
+# Add custom CSS for further customization
+html_css_files = [
+    'custom.css',
+]
