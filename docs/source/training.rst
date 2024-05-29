@@ -194,23 +194,23 @@ Functions
 
 The `train` module contains the following functions:
 
-.. dropdown:: Click to show/hide functions
 
-    .. automodule:: hoverfast.training_utils
-        :members:
-        :undoc-members:
-        :show-inheritance:
 
-.. dropdown:: Click to show/hide functions
+.. automodule:: hoverfast.training_utils
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
-    .. automodule:: hoverfast.augment
-        :members:
-        :undoc-members:
-        :show-inheritance:
 
-.. dropdown:: Click to show/hide functions
 
-    .. automodule:: hoverfast.hoverfast
-        :members:
-        :undoc-members:
-        :show-inheritance:
+.. automodule:: hoverfast.augment
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
+
+.. automodule:: hoverfast.hoverfast
+    :members:
+    :undoc-members:
+    :show-inheritance:

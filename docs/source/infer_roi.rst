@@ -134,9 +134,8 @@ Functions
 
 The `infer_roi` module contains the following functions:
 
-.. dropdown:: Click to show/hide functions
 
-    .. automodule:: hoverfast.utils_roi
-        :members:
-        :undoc-members:
-        :show-inheritance:
+.. automodule:: hoverfast.utils_roi
+    :members:
+    :undoc-members:
+    :show-inheritance:
