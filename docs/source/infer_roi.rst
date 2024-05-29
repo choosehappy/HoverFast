@@ -129,14 +129,3 @@ Explanation:
 - Color: Set the border color to red.
 - Output: Results saved in /path/to/output/.
 
-Functions
----------
-
-The `infer_roi` module contains the following functions:
-
-.. dropdown:: Click to show/hide functions
-
-    .. automodule:: hoverfast.utils_roi
-        :members:
-        :undoc-members:
-        :show-inheritance:
