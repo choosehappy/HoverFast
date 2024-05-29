@@ -168,8 +168,9 @@ Functions
 
 The `infer_wsi` module contains the following functions:
 
+.. dropdown:: Click to show/hide functions
 
-.. automodule:: hoverfast.utils_wsi
-    :members:
-    :undoc-members:
-    :show-inheritance:
+    .. automodule:: hoverfast.utils_wsi
+        :members:
+        :undoc-members:
+        :show-inheritance:
