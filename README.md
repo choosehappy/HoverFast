@@ -1,4 +1,4 @@
-# HoverFast :microscope: :fast_forward:
+![HoverFast Logo](docs/source/_static/hoverfast_logo.png)
 
 ![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/choosehappy/HoverFast)

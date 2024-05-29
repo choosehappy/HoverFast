@@ -1,3 +1,6 @@
+.. image:: _static/images/hoverfast_logo.png
+   :alt: HoverFast logo
+
 Introduction
 ============
 
