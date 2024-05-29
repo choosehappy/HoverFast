@@ -20,25 +20,49 @@ import logging
 import datetime
 import glob
 import time
+from .utils_wsi import load_model, divide_batch, pre_watershed
 
 
-def load_model(model_path,device):
-    checkpoint = torch.load(model_path, map_location=lambda storage, loc: storage)
-    model = HoverFast(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
-             padding=checkpoint["padding"], depth=checkpoint["depth"], wf=checkpoint["wf"],
-             up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"], conv_block=checkpoint["conv_block"]).to(device, memory_format=torch.channels_last)
-    model.load_state_dict(checkpoint["model_dict"])
-    model = model.half()  # Convert the model to float16
-    model.eval()
-    return model
 
 int_coords = lambda x: np.array(x).round().astype(np.int32)
 
-def divide_batch(l, n): 
-    for i in range(0, len(l), n):  
-        yield l[i:i + n]
+def load_roi(spaths):
+    """
+    Load regions of interest (ROIs) from given paths.
 
-def multiproc(function,arg_list,n_process,output=True):
+    This function reads images from the specified paths and converts them to numpy arrays.
+
+    Parameters:
+    spaths (list of str): List of file paths to the ROIs.
+
+    Returns:
+    list: A list of numpy arrays representing the loaded ROIs.
+    """
+    
+    out = []
+    for spath in spaths:
+        region = np.asarray(Image.open(spath))
+        out.append(np.copy(region))
+    return out
+
+def multiproc_roi(function,arg_list,n_process,output=True):
+    """
+    Execute a function in parallel using multiprocessing with batching for regions of interest (ROI).
+
+    This function creates a multiprocessing pool with the specified number of processes,
+    divides the argument list into batches, and applies the function to each batch in parallel.
+
+    Parameters:
+    function (callable): The function to be executed in parallel.
+    arg_list (list): A list of arguments to be passed to the function.
+    n_process (int): The number of processes to use for multiprocessing.
+    output (bool, optional): If True, the output of the function calls is returned. Default is True.
+
+    Returns:
+    list: A list of results from the function calls if output is True.
+          The results are concatenated if they are lists.
+    """
+
     pool = multiprocessing.Pool(n_process)
     out = list(pool.imap(function,list(divide_batch(arg_list,int(np.ceil(len(arg_list)/n_process))))))
     pool.close()
@@ -47,14 +71,25 @@ def multiproc(function,arg_list,n_process,output=True):
         return
     return sum(out,[]) if isinstance(out[0],list) else out
 
-def load_roi(spaths):
-    out = []
-    for spath in spaths:
-        region = np.asarray(Image.open(spath))
-        out.append(np.copy(region))
-    return out
 
-def predict(regions, model, device):
+def predict_roi(regions, model, device):
+    """
+    Perform nuclei detection on regions of interest (ROIs) using a pre-trained model.
+
+    This function transfers regions to the GPU, applies padding, performs nuclei detection using the model,
+    and processes the output to return binary masks and feature maps.
+
+    Parameters:
+    regions (numpy.ndarray): Array of regions to be processed.
+    model (torch.nn.Module): Pre-trained model for nuclei detection.
+    device (torch.device): Device to perform computation on (GPU or CPU).
+
+    Returns:
+    tuple:
+        output_cpu (numpy.ndarray): Binary masks indicating detected nuclei.
+        maps_final (numpy.ndarray): Feature maps for further processing.
+    """
+     
     stride = 168
 
     # Transfer regions to GPU as a torch tensor
@@ -79,48 +114,27 @@ def predict(regions, model, device):
 
     return output_cpu,maps_final
 
-def pre_watershed(output_mask,maps):
-    if np.all(output_mask == 0):
-        return None, None, None
 
-    # Normalizing maps
-    h_dir = cv2.normalize(maps[0], None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    v_dir = cv2.normalize(maps[1], None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+def watershed_object_roi(rg,dist,submarker,opening,offset,poly_simplify_tolerance,threshold):
+    """
+    Perform watershed segmentation on detected objects in ROIs.
 
-    # Sobel operations
-    sobelh = cv2.Sobel(h_dir, cv2.CV_64F, 1, 0, ksize=5)
-    sobelv = cv2.Sobel(v_dir, cv2.CV_64F, 0, 1, ksize=5)
-    del h_dir, v_dir
+    This function applies watershed segmentation to divide detected objects and extract their features.
+    The features are then processed and saved using simple parameters.
 
-    # Normalizing sobel results and calculating overall gradient magnitude
-    sobelh = 1 - cv2.normalize(sobelh, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    sobelv = 1 - cv2.normalize(sobelv, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    overall = np.sqrt(sobelh ** 2 + sobelv ** 2)
-    del sobelh, sobelv
+    Parameters:
+    rg (skimage.measure._regionprops.RegionProperties): Region properties of the detected object.
+    dist (numpy.ndarray): Distance transform for watershed segmentation.
+    submarker (numpy.ndarray): Marker image for watershed segmentation.
+    opening (numpy.ndarray): Processed mask for watershed segmentation.
+    offset (tuple): Offset coordinates for the region.
+    poly_simplify_tolerance (float): Tolerance for simplifying polygons.
+    threshold (float): Minimum size threshold for nuclei area.
 
-    # Using the original kernel size
-    opening = output_mask.astype(np.uint8)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    opening = cv2.morphologyEx(opening, cv2.MORPH_OPEN, kernel, iterations=2)
+    Returns:
+    list: A list of contours representing detected nuclei.
+    """
 
-
-    np.subtract(overall, 1 - opening, out=overall)  # In-place operation
-    np.maximum(overall, 0, out=overall)  # In-place operation
-
-    # Preparing for watershed
-    dist = (1.0 - overall) * opening
-    dist = -cv2.GaussianBlur(dist, (3, 3), 0)
-    overall = (overall >= 0.4).astype(np.int32)
-
-    marker = opening - overall
-    np.maximum(marker, 0, out=marker)  # In-place operation
-    marker = ndi.binary_fill_holes(marker).astype(np.uint8)
-    marker, _ = ndi.label(marker)
-    del overall
-
-    return dist, marker, opening
-
-def watershed_object(rg,dist,submarker,opening,offset,poly_simplify_tolerance,threshold):
     output = []
     
     vals = np.unique(submarker)
@@ -149,7 +163,27 @@ def watershed_object(rg,dist,submarker,opening,offset,poly_simplify_tolerance,th
         output.append(c.squeeze())
     return output
 
-def region_feature(region,output_mask,dist, marker, opening,poly_simplify_tolerance, threshold,color,width,outdir,sname):
+def region_feature_roi(region,output_mask,dist, marker, opening,poly_simplify_tolerance, threshold,color,width,outdir,sname):
+    """
+    Extract features from each detected region of interest (ROI) and save them.
+
+    This function isolates detected objects, performs watershed segmentation,
+    and extracts features for each object. The features are then saved to disk.
+
+    Parameters:
+    region (numpy.ndarray): Image region being processed.
+    output_mask (numpy.ndarray): Binary mask indicating detected nuclei.
+    dist (numpy.ndarray): Distance transform for watershed segmentation.
+    marker (numpy.ndarray): Marker image for watershed segmentation.
+    opening (numpy.ndarray): Processed mask for watershed segmentation.
+    poly_simplify_tolerance (float): Tolerance for simplifying polygons.
+    threshold (float): Minimum size threshold for nuclei area.
+    color (str): Color for drawing contours.
+    width (int): Width of the contour lines.
+    outdir (str): Output directory.
+    sname (str): Slide name.
+    """
+
     rgs = regionprops(ndi.label(output_mask)[0])
     label = np.zeros_like(output_mask,np.int32)
     img = np.copy(region)
@@ -159,12 +193,12 @@ def region_feature(region,output_mask,dist, marker, opening,poly_simplify_tolera
         if rg.area < threshold:
             continue
         ymin,xmin,ymax,xmax = rg.bbox
-        temp = watershed_object(rg,dist[ymin:ymax,xmin:xmax],marker[ymin:ymax,xmin:xmax]*rg.image,opening[ymin:ymax,xmin:xmax],(xmin,ymin),poly_simplify_tolerance,threshold)
+        temp = watershed_object_roi(rg,dist[ymin:ymax,xmin:xmax],marker[ymin:ymax,xmin:xmax]*rg.image,opening[ymin:ymax,xmin:xmax],(xmin,ymin),poly_simplify_tolerance,threshold)
         for i in range(len(temp)):
             poly = temp[i]
             cv2.polylines(img, [poly],-1,color_rgb,width)
             cv2.fillPoly(label,[poly],len(features)+i)
-        features += [save_poly(poly.astype(float)) for poly in temp]
+        features += [save_poly_dict(poly.astype(float)) for poly in temp]
     #save to Json
     with gzip.open(os.path.join(outdir,'json', sname + ".json.gz"), 'wt', encoding="ascii") as zipfile:
         if len(features)!=0:
@@ -172,20 +206,60 @@ def region_feature(region,output_mask,dist, marker, opening,poly_simplify_tolera
     Image.fromarray(img).save(os.path.join(outdir,'overlay',sname+f'_overlay.png'))
     Image.fromarray(label).save(os.path.join(outdir,'label_mask',sname+f'_label_mask.png'))
 
-def processing(regions,names,model,device,batch_to_gpu):
+def processing_roi(regions,names,model,device,batch_to_gpu):
+    """
+    Process a batch of regions for nuclei detection.
+
+    This function processes a batch of regions for nuclei detection using a pre-trained model.
+
+    Parameters:
+    regions (numpy.ndarray): Array of regions to be processed.
+    names (list of str): List of names corresponding to the regions.
+    model (torch.nn.Module): Pre-trained model for nuclei detection.
+    device (torch.device): Device to perform computation on (GPU or CPU).
+    batch_to_gpu (int): Target batch size for GPU.
+
+    Returns:
+    list: List of tuples containing output masks, feature maps, and region coordinates.
+    """
     arg_list1 = []
     for rgs in tqdm(divide_batch(regions,batch_to_gpu),desc="inner",leave=False, total = math.ceil(len(regions)/batch_to_gpu)):
-        output_mask, maps = predict(rgs, model, device)
+        output_mask, maps = predict_roi(rgs, model, device)
         arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
     torch.cuda.empty_cache()
     return list(map(tuple.__add__, arg_list1, map(lambda x:(x,) ,names)))
 
-def post_processing(data,outdir,threshold,poly_simplify_tolerance,color,width):
+def post_processing_roi(data,outdir,threshold,poly_simplify_tolerance,color,width):
+    """
+    Post-process the model output to extract nuclei features and save them.
+
+    This function performs watershed segmentation and extracts features from the model output.
+    The features are then saved to disk.
+
+    Parameters:
+    data (list): List of tuples containing model output masks, feature maps, regions, and names.
+    outdir (str): Output directory.
+    threshold (float): Minimum size threshold for nuclei area.
+    poly_simplify_tolerance (float): Tolerance for simplifying polygons.
+    color (str): Color for drawing contours.
+    width (int): Width of the contour lines.
+    """
+
     for binmask,maps,region,sname in data:
         dist, marker, opening = pre_watershed(binmask,maps)
-        region_feature(region,binmask,dist, marker, opening,poly_simplify_tolerance, threshold,color,width,outdir,sname)
+        region_feature_roi(region,binmask,dist, marker, opening,poly_simplify_tolerance, threshold,color,width,outdir,sname)
 
-def save_poly(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
+def save_poly_dict(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
+    """
+    Serialize a polygon representing a detected object as a dictionary.
+
+    This function converts a polygon and its associated features into a dictionary format.
+
+    Parameters:
+    poly (numpy.ndarray): Coordinates of the polygon.
+    object_class (dict, optional): Classification information for the object. Default is {'name': 'Nuclei', 'colorRGB': -65536}.
+    """
+
     feature = {}
     feature["geometry"] = {'type':'Polygon','coordinates':(tuple(map(tuple,poly.squeeze()))+(tuple(poly[0].squeeze()),),)}
     feature["properties"] = {'object_type': 'cell',
@@ -195,12 +269,40 @@ def save_poly(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
     return feature
 
 def infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width):
-    regions = np.array(multiproc(load_roi,spaths,n_process))
+    """
+    Infer nuclei on regions of interest (ROIs) in parallel and save the results.
+
+    This function performs nuclei detection on the specified regions of interest using a pre-trained model,
+    processes the results, and saves them to disk.
+
+    Parameters:
+    spaths (list of str): List of file paths to the ROIs.
+    n_process (int): The number of processes to use for multiprocessing.
+    outdir (str): Output directory.
+    threshold (float): Minimum size threshold for nuclei area.
+    poly_simplify_tolerance (float): Tolerance for simplifying polygons.
+    color (str): Color for drawing contours.
+    model (torch.nn.Module): Pre-trained model for nuclei detection.
+    device (torch.device): Device to perform computation on (GPU or CPU).
+    batch_to_gpu (int): Target batch size for GPU.
+    width (int): Width of the contour lines.
+    """
+
+    regions = np.array(multiproc_roi(load_roi,spaths,n_process))
     names = [os.path.basename(spath).rpartition('.')[0] for spath in spaths]
-    arg_list = processing(regions, names,model,device,batch_to_gpu)
-    multiproc(partial(post_processing,outdir=outdir,threshold=threshold,poly_simplify_tolerance=poly_simplify_tolerance,color=color,width=width),arg_list,n_process,output=False)
+    arg_list = processing_roi(regions, names,model,device,batch_to_gpu)
+    multiproc_roi(partial(post_processing_roi,outdir=outdir,threshold=threshold,poly_simplify_tolerance=poly_simplify_tolerance,color=color,width=width),arg_list,n_process,output=False)
 
 def main_roi(args) -> None:
+    """
+    Main function to perform nuclei detection on regions of interest (ROIs).
+
+    This function sets up the necessary parameters, loads the model, and performs nuclei detection
+    on the specified ROIs, saving the results to disk.
+
+    Parameters:
+    args (argparse.Namespace): Parsed command-line arguments.
+    """
 
     #get args
 
@@ -250,6 +352,11 @@ def main_roi(args) -> None:
     if len(slide_dirs)==1:
         #input is a glob pattern
         slide_dirs = glob.glob(slide_dirs[0])
+
+    if not slide_dirs:
+        error_message = "No tiles detected in the specified directory."
+        logger.error(error_message)
+        raise ValueError(error_message)
 
     start=time.time()
     for spaths in tqdm(divide_batch(slide_dirs,batch_mem),desc="outer",leave=False,total=math.ceil(len(slide_dirs)/batch_mem)):

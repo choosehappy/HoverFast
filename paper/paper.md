@@ -52,7 +52,7 @@ affiliations:
    index: 3
  - name: Histofy Ltd, Birmingham, United Kingdom
    index: 4
- - name: Emory University, Atlanta, GA, USA.
+ - name: Emory University, Atlanta, Georgia, United States of America.
    index: 5
 date: 28 April 2024
 bibliography: paper.bib

@@ -4,6 +4,7 @@ from .utils_wsi import *
 from .training_utils import *
 from .hoverfast import *
 from .utils_roi import *
+from . import __version__
 
 
 def get_args():
@@ -11,7 +12,7 @@ def get_args():
 
     parser = argparse.ArgumentParser(prog="HoverFast", description='Blazing fast nuclei segmentation for H&E WSIs',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    
+    parser.add_argument('--version', action='version', version=f'HoverFast {__version__}')
     subparsers = parser.add_subparsers(title="mode", help="Three modes: infer_wsi, infer_roi, train ", dest='mode')
 
 
@@ -34,7 +35,7 @@ def get_args():
                         type=str)
     infer_wsi_parser.add_argument('-m', '--model_path',
                         help="path to pre-trainned model",
-                        default= "./hoverfast_pretrained_pannuke.pth",
+                        default= "./hoverfast_crosstissue_best_model.pth",
                         type=str)
     infer_wsi_parser.add_argument('-l', '--magnification',
                         help="magnification to work on",
@@ -80,7 +81,7 @@ def get_args():
                         type=str)
     infer_roi_parser.add_argument('-m', '--model_path',
                         help="path to pre-trainned model",
-                        default= "./hoverfast_pretrained_pannuke.pth",
+                        default= "./hoverfast_crosstissue_best_model.pth",
                         type=str)
     infer_roi_parser.add_argument('-p', '--poly_simplify',
                         help="float representing the tolerance for simplifying the polygons",
@@ -119,9 +120,9 @@ def get_args():
     train_parser.add_argument('dataname',
                         help="dataset name, correspond to the pytables name under the following format: (dataname)_(phase).pytables",
                         type=str)
-    train_parser.add_argument('-l', '--log_dir',
-                        help="log path for tensorboard to write the summary",
-                        default="./log/",
+    train_parser.add_argument('-o', '--outdir',
+                        help="output directory path for tensorboard and trained model",
+                        default="./output/",
                         type=str)
     train_parser.add_argument('-p', '--dataset_path',
                         help="path to the directory that contains the pytables",

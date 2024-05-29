@@ -5,6 +5,19 @@ from skimage.color import rgb2hed, hed2rgb
 import numbers
 
 class HEDJitterAugmentation(ImageOnlyTransform):
+    """
+    Custom color augmentation using HED jittering for stain normalization.
+
+    This augmentation randomly adjusts the Hematoxylin-Eosin-DAB (HED) color space of an image
+    to simulate variations in staining.
+
+    Parameters:
+    alpha (float or tuple): Range of alpha values for scaling the HED channels. If a single number, the range is (-alpha, alpha).
+    beta (float or tuple): Range of beta values for shifting the HED channels. If a single number, the range is (-beta, beta).
+    always_apply (bool, optional): Whether to always apply this transformation. Default is False.
+    p (float, optional): Probability of applying the transformation. Default is 0.5.
+    """
+
     def __init__(self,alpha,beta,always_apply=False,p=0.5):
         super(HEDJitterAugmentation, self).__init__(always_apply, p)
         if isinstance(alpha,numbers.Number):
@@ -13,21 +26,32 @@ class HEDJitterAugmentation(ImageOnlyTransform):
             if alpha[0]<=alpha[1]:
                 self.alpha = alpha
             else:
-                raise ValueError
+                raise ValueError("Alpha range must be in the form (min, max).")
         else:
-            raise ValueError
+            raise ValueError("Alpha must be a number or a tuple.")
+        
         if isinstance(beta,numbers.Number):
             self.beta = (-beta,beta)
         elif isinstance(beta,tuple):
             if beta[0]<=beta[1]:
                 self.beta = beta
             else:
-                raise ValueError
+                raise ValueError("Beta range must be in the form (min, max).")
         else:
-            raise ValueError
+            raise ValueError("Beta must be a number or a tuple.")
+        
         self.cap = np.array([1.87798274, 1.13473037, 1.57358807])
 
     def adjust_HED(self,img):
+        """
+        Adjust the HED color space of the image.
+
+        Parameters:
+        img (numpy.ndarray): Input image in RGB format.
+
+        Returns:
+        numpy.ndarray: Augmented image with adjusted HED channels.
+        """
         img = np.array(img)
         
         alpha = np.random.uniform(1+self.alpha[0], 1+self.alpha[1], (1, 3))
@@ -42,13 +66,31 @@ class HEDJitterAugmentation(ImageOnlyTransform):
         return (255*nimg).clip(0,255).astype(np.uint8)
 
     def apply(self, image,**params):
-        # Apply your custom color augmentation function to the image
+        """
+        Apply the custom HED jittering augmentation to the image.
+
+        Parameters:
+        image (numpy.ndarray): Input image in RGB format.
+
+        Returns:
+        numpy.ndarray: Augmented image.
+        """
         augmented_image = self.adjust_HED(image)
 
-        # Return the augmented image and the unchanged mask
         return augmented_image
     
 def randaugment():
+    """
+    Generate a random augmentation pipeline for image data.
+
+    This function creates a set of random augmentations that includes
+    HED jittering, flips, rotations, crops, brightness/contrast adjustments,
+    gamma adjustments, blurs, and noise additions.
+
+    Returns:
+    albumentations.core.composition.Compose: A composition of random augmentations.
+    """
+    
     p=0.8
 
     aug_always = [HEDJitterAugmentation((-0.4,0.4),(-0.005,0.01),p=p),

@@ -1,6 +1,13 @@
 # HoverFast :microscope: :fast_forward:
 
-Welcome to the official documentation for HoverFast, a high-performance tool designed for efficient nuclear segmentation in Whole Slide Images (WSIs).
+![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/choosehappy/HoverFast)
+![Python Version](https://img.shields.io/badge/python-3.11-blue)
+![Docker Pulls](https://img.shields.io/docker/pulls/petroslk/hoverfast)
+![GitHub issues](https://img.shields.io/github/issues/choosehappy/HoverFast)
+![GitHub stars](https://img.shields.io/github/stars/choosehappy/HoverFast)
+
+Welcome to the official repository of HoverFast, a high-performance tool designed for efficient nuclear segmentation in Whole Slide Images (WSIs).
 
 ## Overview
 
@@ -59,6 +66,10 @@ HoverFast offers a versatile CLI for processing WSIs, ROIs, and for model traini
 - **Basic Usage**
 ```
 HoverFast infer_wsi --help
+```
+- **Check Version**
+```
+HoverFast --version
 ```
 
 - **Example Command without binary masks**
@@ -135,7 +146,7 @@ You can use these to train the model as follows:
 The training batch size can be adjusted based on available VRAM
 
 ```
-HoverFast train data -l training_metrics -p /path/to/pytable_files/ -b 16 -n 20 -e 100
+HoverFast train data -o training_model -p /path/to/pytable_files/ -b 16 -n 20 -e 100
 ```
 
 ```
@@ -146,6 +157,22 @@ docker run -it --gpus all -v /path/to/pytables/:/app petroslk/hoverfast:latest H
 singularity exec --nv hoverfast_latest.sif HoverFast train data -l training_metrics -p /path/to/pytables/ -b 16 -n 20 -e 100
 ```
 
+## Testing
+
+Since HoverFast utilizes GPU for almost all tasks, most tests have to be run locally using pytest.
+
+First, install pytest:
+
+```
+pip install pytest
+```
+
+Then, you can just run the following command inside the HoverFast repo:
+
+```
+pytest -vv
+```
+Note that the first time you run these, the infer_wsi test can take longer since the slide will be downloaded locally
 
 ## Authors
 

@@ -28,3 +28,9 @@ def test_train_help_works() -> None:
     rv, out = getstatusoutput('{} infer_roi -h'.format(PRG))
     assert rv == 0
     assert out.lower().startswith('usage:')
+
+def test_versioning() -> None:
+    """ -h option prints help page """
+    rv, out = getstatusoutput('{} --version'.format(PRG))
+    assert rv == 0
+    assert out.lower().startswith('hoverfast')

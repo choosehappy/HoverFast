@@ -21,7 +21,16 @@ from tensorboardX import SummaryWriter
 
 class Dataset(object):
     def __init__(self, fname, device ,transforms=None, edge_weight= False):
-        #nothing special here, just internalizing the constructor parameters
+        """
+        Initialize the Dataset object.
+
+        Parameters:
+        fname (str): Filename of the HDF5 database.
+        device (torch.device): Device to perform computation on (GPU or CPU).
+        transforms (callable, optional): Transformations to be applied to the images and labels. Default is None.
+        edge_weight (bool, optional): Whether to compute edge weights. Default is False.
+        """
+
         self.fname=fname
         self.edge_weight = edge_weight
         self.device = device
@@ -32,6 +41,15 @@ class Dataset(object):
             self.nitems=db.root.img.shape[0]
         
     def __getitem__(self, index):
+        """
+        Get an item from the dataset.
+
+        Parameters:
+        index (int): Index of the item to retrieve.
+
+        Returns:
+        tuple: Tuple containing the image, mask, maps, edge weights, and boundary weights.
+        """
         with tables.open_file(self.fname,'r') as db:
             img = db.root.img[index]
             label = db.root.label[index]
@@ -55,14 +73,39 @@ class Dataset(object):
 
         return (torch.from_numpy(img).permute(2, 0, 1),torch.from_numpy(mask),torch.from_numpy(maps),torch.from_numpy(eweight),torch.from_numpy(bweight))
     def __len__(self):
+        """
+        Get the number of items in the dataset.
+
+        Returns:
+        int: Number of items in the dataset.
+        """
         return self.nitems
 
 def asMinutes(s):
+    """
+    Convert seconds to a string representing minutes and seconds.
+
+    Parameters:
+    s (float): Time in seconds.
+
+    Returns:
+    str: Time formatted as 'Xm Ys'.
+    """
     m = math.floor(s / 60)
     s -= m * 60
     return '%dm %ds' % (m, s)
 
 def timeSince(since, percent):
+    """
+    Calculate the elapsed time and estimated remaining time.
+
+    Parameters:
+    since (float): Start time in seconds.
+    percent (float): Progress percentage (0 to 1).
+
+    Returns:
+    str: Elapsed and remaining time formatted as 'Elapsed (- Remaining)'.
+    """
     now = time.time()
     s = now - since
     es = s / (percent+.00001)
@@ -70,6 +113,17 @@ def timeSince(since, percent):
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 def make_maps(label):
+    """
+    Create feature maps and boundary weight for a given label.
+
+    This function generates horizontal and vertical gradient maps, and computes boundary weights for each region in the label.
+
+    Parameters:
+    label (numpy.ndarray): Label image with segmented regions.
+
+    Returns:
+    tuple: Tuple containing the maps and the boundary weight.
+    """
     maps = np.zeros((2,)+label.shape,np.float32)
     weight = np.ones(label.shape)
     rgs = regionprops(label)
@@ -84,7 +138,17 @@ def make_maps(label):
     return maps,weight
 
 def dice_loss(pred, true, smooth=1e-3):
-    """`pred` and `true` must be of torch.float32. Assuming of shape NxHxWxC."""
+    """
+    Compute the Dice loss between predicted and true labels.
+
+    Parameters:
+    pred (torch.Tensor): Predicted labels, assumed to be of shape NxHxWxC.
+    true (torch.Tensor): True labels, assumed to be of shape NxHxWxC.
+    smooth (float, optional): Smoothing factor to avoid division by zero. Default is 1e-3.
+
+    Returns:
+    torch.Tensor: Computed Dice loss.
+    """
     inse = torch.sum(pred * true, (0, 1, 2))
     l = torch.sum(pred, (0, 1, 2))
     r = torch.sum(true, (0, 1, 2))
@@ -93,6 +157,19 @@ def dice_loss(pred, true, smooth=1e-3):
     return loss
 
 def grad_kernel(size=11):
+    """
+    Create a gradient kernel for computing image gradients.
+
+    This function generates a kernel for computing horizontal and vertical gradients
+    in an image. The kernel size is adjustable.
+
+    Parameters:
+    size (int, optional): Size of the kernel. Default is 11.
+
+    Returns:
+    torch.Tensor: A 4D tensor representing the gradient kernel.
+    """
+
     temp = torch.arange(-size // 2 + 1,size // 2 + 1,dtype=torch.float32,device="cuda",requires_grad=False,)
     temp = torch.outer(temp,torch.ones_like(temp))
     stemp = temp*temp
@@ -100,6 +177,18 @@ def grad_kernel(size=11):
 
 class Criterion(nn.Module):
     def __init__(self,class_weight,edge_weight,grad_weight,hv_weight,dice_weight,crossentropy_weight):
+        """
+        Initialize the Criterion object for computing loss.
+
+        Parameters:
+        class_weight (torch.Tensor): Weights for each class for cross-entropy loss.
+        edge_weight (float): Weight for edge loss.
+        grad_weight (float): Weight for gradient loss.
+        hv_weight (float): Weight for horizontal and vertical map loss.
+        dice_weight (float): Weight for dice loss.
+        crossentropy_weight (float): Weight for cross-entropy loss.
+        """
+
         super(Criterion, self).__init__()
         self.critCEntropy = nn.CrossEntropyLoss(weight = class_weight, ignore_index = -100 , reduction='none')
         self.critGrad = nn.MSELoss(reduction='none')
@@ -113,7 +202,22 @@ class Criterion(nn.Module):
         self.kernel = grad_kernel()
     
     def forward(self,x_pred,hvm_pred,y,hvmaps,y_weight,hv_weight):
-        # cross entropy loss (Lc)
+        """
+        Compute the loss components for model training.
+
+        Parameters:
+        x_pred (torch.Tensor): Predicted class scores from the model.
+        hvm_pred (torch.Tensor): Predicted horizontal and vertical maps from the model.
+        y (torch.Tensor): True class labels.
+        hvmaps (torch.Tensor): True horizontal and vertical maps.
+        y_weight (torch.Tensor): Weights for the true class labels.
+        hv_weight (torch.Tensor): Weights for the horizontal and vertical maps.
+
+        Returns:
+        tuple: Tuple containing the horizontal and vertical map loss, gradient loss,
+               cross-entropy loss, and dice loss.
+        """
+        # Cross-entropy loss (Lc)
         loss_matrix = self.critCEntropy(x_pred, y)
         lossCEntropy = (loss_matrix * (self.edge_weight**y_weight)).mean() #can skip if edge weight==1
         
@@ -144,34 +248,49 @@ class Criterion(nn.Module):
 
 
 def main_train(args) -> None:
+    """
+    Main function to train the HoverFast model.
 
+    This function sets up the training parameters, initializes the model, loads the dataset, 
+    and performs training and validation over the specified number of epochs.
+
+    Parameters:
+    args (argparse.Namespace): Parsed command-line arguments.
+    """
     datapath = args.dataset_path
     dataname = args.dataname
-    log_dir = args.log_dir
+    outdir = args.outdir
     batch_size = args.batch_size
     n_process = min(batch_size,os.cpu_count())
     num_epochs = args.epoch
-    depth = args.depth       #depth of the network 
-    wf = args.width           #wf (int): number of filters in the first layer is 2**wf
+    depth = args.depth  # Depth of the network 
+    wf = args.width  # wf (int): number of filters in the first layer is 2**wf
 
-    # --- unet params
-    #these parameters get fed directly into the UNET class, and more description of them can be discovered there
-    n_classes= 2    #number of classes in the data mask that we'll aim to predict
-    in_channels= 3  #input channel of the data, RGB = 3
-    padding= True   #should levels be padded
-    batch_norm = True #should we use batch normalization between the layers
-    up_mode = 'upconv' # 'upconv' for a transpose convolution for the decoding branch or 'upsample' for simple interpolation
-    conv_block = "msunet" # either ['unet', 'msunet'] for the convolutionnal block to use, see HoverFast class for more information
+    # UNet params
+    n_classes= 2 # Number of classes in the data mask to predict
+    in_channels= 3 # Input channels of the data, RGB = 3
+    padding= True # Whether to use padding
+    batch_norm = True # Whether to use batch normalization between layers
+    up_mode = 'upconv' # 'upconv' for transpose convolution or 'upsample' for interpolation
+    conv_block = "msunet"  # Convolutional block type, either 'unet' or 'msunet'
 
-    # --- training params
-    edge_weight = 1.1 #edges tend to be the most poorly segmented given how little area they occupy in the training set, this paramter boosts their values along the lines of the original UNET paper
-    phases = ["train","test"] #how many phases did we create databases for?
-    validation_phases= ["test"] #when should we do valiation? note that validation is time consuming, so as opposed to doing for both training and validation, we do it only for vlaidation at the end of the epoch
-    grad_weight,hv_weight,dice_weight,crossentropy_weight=(1/10,14,1/6,1) #weight for the different loss
-    torch.backends.cudnn.benchmark=True
+    # Training parameters
+    edge_weight = 1.1  # Boost edge values based on original UNet paper
+    phases = ["train", "test"]  # Phases for training and testing
+    validation_phases = ["test"]  # Phases for validation
+    grad_weight, hv_weight, dice_weight, crossentropy_weight = (1/10, 14, 1/6, 1)  # Loss weights
+
+    torch.backends.cudnn.benchmark = True
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-    model = HoverFast(n_classes=n_classes, in_channels=in_channels, padding=padding,depth=depth,wf=wf, up_mode=up_mode, batch_norm=batch_norm, conv_block=conv_block).to(device, memory_format=torch.channels_last)
 
+    # Initialize model
+    model = HoverFast(
+        n_classes=n_classes, in_channels=in_channels, padding=padding,
+        depth=depth, wf=wf, up_mode=up_mode, batch_norm=batch_norm,
+        conv_block=conv_block
+    ).to(device, memory_format=torch.channels_last)
+
+    # Load dataset and DataLoader
     dataset={}
     dataLoader={}
     for phase in phases:
@@ -179,18 +298,17 @@ def main_train(args) -> None:
         dataLoader[phase]=DataLoader(dataset[phase], batch_size=batch_size,shuffle=True, num_workers=n_process, pin_memory=True, drop_last=True)
 
     optim = torch.optim.Adam(model.parameters()) 
-    class_weight=dataset["train"].numpixels[1,:] #don't take ignored class into account here
-
+    class_weight=dataset["train"].numpixels[1,:]
     f=np.sum(class_weight)/class_weight
     class_weight=f/np.sum(f)
     class_weight = torch.from_numpy(class_weight).type('torch.FloatTensor').to(device)
 
-    print(f'class weight: {class_weight}') #show final used weights, make sure that they're reasonable before continouing
+    print(f'class weight: {class_weight}') # Display class weights
 
     criterion = Criterion(class_weight,edge_weight,grad_weight,hv_weight,dice_weight,crossentropy_weight)
     bcm = BinaryConfusionMatrix().to(device)
 
-    writer=SummaryWriter(os.path.join(log_dir,f"hoverfast_{dataname}_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M"))) #open the tensorboard visualiser
+    writer=SummaryWriter(os.path.join(outdir,f"hoverfast_{dataname}_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M"))) # Open the tensorboard visualiser
 
     best_loss_on_test = np.Infinity
     edge_weight=torch.tensor(edge_weight).to(device)
@@ -204,11 +322,11 @@ def main_train(args) -> None:
             stats['cmatrix'] = torch.zeros((n_classes,n_classes)).to(device)
 
             if phase == 'train':
-                model.train()  # Set model to training mode
-            else: #when in eval mode, we don't want parameters to be updated
-                model.eval()   # Set model to evaluate mode
+                model.train()  
+            else: 
+                model.eval()   
 
-            for _ , (X, y, hvmaps, y_weight, b_weight) in enumerate(tqdm(dataLoader[phase],leave=False)): #for each of the batches
+            for _ , (X, y, hvmaps, y_weight, b_weight) in enumerate(tqdm(dataLoader[phase],leave=False)): 
                 X = X.type('torch.FloatTensor').to(device, memory_format=torch.channels_last)
                 y = y.type('torch.LongTensor').to(device)
                 hvmaps = hvmaps.to(device)
@@ -221,7 +339,7 @@ def main_train(args) -> None:
                     losses = criterion(x_pred,hvm_pred,y,hvmaps,y_weight,b_weight)
                     loss = sum(losses)
 
-                    if phase=="train": #in case we're in train mode, need to do back propogation
+                    if phase=="train":
                         optim.zero_grad()
                         loss.backward()
                         optim.step()
@@ -233,7 +351,7 @@ def main_train(args) -> None:
                     stats['loss']['crossEntropy_loss']+=losses[2].detach()
                     stats['loss']['dice_loss']+=losses[3].detach()
 
-                    if phase in validation_phases: #if this phase is part of validation, compute confusion matrix
+                    if phase in validation_phases:
                         
                         predflat=x_pred.argmax(axis=1).flatten()
                         targetflat=y.flatten()
@@ -251,7 +369,7 @@ def main_train(args) -> None:
             if phase in validation_phases:
                 stats['cmatrix']=(stats['cmatrix']/stats['cmatrix'].sum()).cpu().numpy()
 
-            #save metrics to tensorboard
+            # Save metrics to tensorboard
             writer.add_scalars(f'{phase}/loss', stats['loss'], epoch)
             if phase in validation_phases:
                 writer.add_scalar(f'{phase}/accuracy', stats['cmatrix'].trace(), epoch)
@@ -267,8 +385,7 @@ def main_train(args) -> None:
         print('%s ([%d/%d] %d%%), train loss: %.4f test loss: %.4f' % (timeSince(start_time, (epoch+1) / num_epochs), 
                                                     epoch+1, num_epochs ,(epoch+1) / num_epochs * 100, train_loss, current_loss),end="")    
 
-        #if current loss is the best we've seen, save model state with all variables
-        #necessary for recreation
+
         if current_loss < best_loss_on_test:
             best_loss_on_test = current_loss
             print("  **")
@@ -286,6 +403,6 @@ def main_train(args) -> None:
             'conv_block': conv_block }
 
 
-            torch.save(state, f"{dataname}_best_model.pth")
+            torch.save(state, f"{outdir}/{dataname}_best_model.pth")
         else:
             print("")
