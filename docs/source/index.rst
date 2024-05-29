@@ -6,11 +6,12 @@
 Welcome to HoverFast's documentation!
 =====================================
 
+.. include:: introduction.rst
+
 .. toctree::
    :maxdepth=2
    :caption: Contents:
-   
-   introduction
+
    installation
    infer_wsi
    infer_roi
