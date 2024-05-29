@@ -13,6 +13,10 @@ Welcome to the official repository of HoverFast, a high-performance tool designe
 
 HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging.
 
+## Documentation
+
+An overview of the documentation is provided in this repository, but for more details, please visit the full [official documentation](https://hoverfast.readthedocs.io/en/latest/)
+
 ## Installation
 
 ### Prerequisites
