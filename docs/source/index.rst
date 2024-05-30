@@ -38,9 +38,4 @@ For that reason, we highly recommend looking into other tools such as HistoQC (h
    training
    unit_testing
 
-Indices and tables
-==================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

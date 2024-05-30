@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the following information."
+authors:
+  - family-names: Liakopoulos
+    given-names: Petros
+  - family-names: Massonnet
+    given-names: Julien
+  - family-names: Bonjour
+    given-names: Jonatan
+  - family-names: Mizrakli
+    given-names: Medya Tekes
+  - family-names: Graham
+    given-names: Simon
+  - family-names: Cuendet
+    given-names: Michel A
+  - family-names: Seipel
+    given-names: Amanda H
+  - family-names: Michielin
+    given-names: Olivier
+  - family-names: Merkler
+    given-names: Doron
+  - family-names: Janowczyk
+    given-names: Andrew
+title: "HoverFast: an accurate, high-throughput, clinically deployable nuclear segmentation tool for brightfield digital pathology images"
+version: 1.0.0
+date-released: 2024-05-30
+url: "https://arxiv.org/abs/2405.14028"

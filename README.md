@@ -11,7 +11,7 @@ Welcome to the official repository of HoverFast, a high-performance tool designe
 
 ## Overview
 
-HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging.
+HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging. For more info on the inner workings of HoverFast, do not hesitate to go over our [preprint](https://arxiv.org/abs/2405.14028)
 
 ## Documentation
 
@@ -177,6 +177,23 @@ Then, you can just run the following command inside the HoverFast repo:
 pytest -vv
 ```
 Note that the first time you run these, the infer_wsi test can take longer since the slide will be downloaded locally
+
+For more detailed instructions, including setting up your environment and running specific tests, please refer to the [testing documentation](https://hoverfast.readthedocs.io/en/latest/unit_testing.html)
+
+## How to Cite HoverFast
+
+If you use HoverFast in your research, please cite our paper:
+
+```bibtex
+@article{liakopoulos2024hoverfast,
+  title={HoverFast: an accurate, high-throughput, clinically deployable nuclear segmentation tool for brightfield digital pathology images},
+  author={Liakopoulos, Petros and Massonnet, Julien and Bonjour, Jonatan and Mizrakli, Medya Tekes and Graham, Simon and Cuendet, Michel A and Seipel, Amanda H and Michielin, Olivier and Merkler, Doron and Janowczyk, Andrew},
+  journal={arXiv preprint arXiv:2405.14028},
+  year={2024}
+}
+```
+By citing HoverFast, you help us to continue our research and development. Thank you for your support!
+
 
 ## Authors
 
