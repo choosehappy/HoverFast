@@ -21,7 +21,8 @@ import datetime
 import glob
 import time
 from .utils_wsi import load_model, divide_batch, pre_watershed
-
+from .utils_stain_deconv import *
+from skimage.color import rgb2hed, hed2rgb
 
 
 int_coords = lambda x: np.array(x).round().astype(np.int32)
@@ -70,6 +71,59 @@ def multiproc_roi(function,arg_list,n_process,output=True):
     if not output:
         return
     return sum(out,[]) if isinstance(out[0],list) else out
+
+def predict_roi_ihc(regions, model, device):
+    """
+    Perform nuclei detection with stain deconvolution on regions using a pre-trained model.
+
+    This function transfers regions to the GPU, performs nuclei detection using the model,
+    and processes the output to return binary masks and feature maps.
+
+    Parameters:
+    regions (numpy.ndarray): Array of regions to be processed.
+    model (torch.nn.Module): Pre-trained model for nuclei detection.
+    device (torch.device): Device to perform computation on (GPU or CPU).
+
+    Returns:
+    tuple:
+        output_cpu (numpy.ndarray): Binary masks indicating detected nuclei.
+        maps_final (numpy.ndarray): Feature maps for further processing.
+    """
+
+    stride = 168
+
+    # Transfer regions to GPU as a torch tensor
+    regions_gpu = torch.from_numpy(regions).half().to(device, memory_format=torch.channels_last)
+    regions_shape = regions_gpu.shape
+    regions_gpu = regions_gpu / 255
+    # Padding operations on GPU
+    regions_gpu = torch.nn.functional.pad(regions_gpu, (0, 0, stride // 2, stride // 2, stride // 2, stride // 2), mode='reflect')
+
+    # Do color deconvolution
+    # Convert to hed
+    hed_batch = rgb_to_hed_torch(regions_gpu, device)
+
+    # Extract Hematoxylin channel
+    regions_hematoxylin = extract_h_channel_and_stack(hed_batch)
+
+    # Convert HED back to RGB
+    reconstructed_rgb_batch = hed_to_rgb_torch(regions_hematoxylin, device)
+
+    # Scale and transpose
+    regions_gpu = reconstructed_rgb_batch.permute(0, 3, 1, 2)
+
+    # Model prediction
+    output, maps = model(regions_gpu)
+    # Post-processing
+    output_processed = output[:, :, stride // 2:, stride // 2:][:, :, :regions_shape[1], :regions_shape[2]].argmax(axis=1).type(torch.bool)
+    maps_processed = maps[:, :, stride // 2:, stride // 2:][:, :, :regions_shape[1], :regions_shape[2]]
+
+    # Move the final results to CPU and convert to numpy
+    output_cpu = output_processed.detach().cpu().numpy()
+    maps_cpu = maps_processed.detach().cpu().numpy()
+    maps_final = maps_cpu.astype(np.float32)
+
+    return output_cpu,maps_final
 
 
 def predict_roi(regions, model, device):
@@ -206,7 +260,7 @@ def region_feature_roi(region,output_mask,dist, marker, opening,poly_simplify_to
     Image.fromarray(img).save(os.path.join(outdir,'overlay',sname+f'_overlay.png'))
     Image.fromarray(label).save(os.path.join(outdir,'label_mask',sname+f'_label_mask.png'))
 
-def processing_roi(regions,names,model,device,batch_to_gpu):
+def processing_roi(regions,names,model,device,batch_to_gpu, stain):
     """
     Process a batch of regions for nuclei detection.
 
@@ -224,7 +278,11 @@ def processing_roi(regions,names,model,device,batch_to_gpu):
     """
     arg_list1 = []
     for rgs in tqdm(divide_batch(regions,batch_to_gpu),desc="inner",leave=False, total = math.ceil(len(regions)/batch_to_gpu)):
-        output_mask, maps = predict_roi(rgs, model, device)
+        if stain == "ihc_dab":
+            output_mask, maps = predict_roi_ihc(rgs, model, device)
+        else:
+            output_mask, maps = predict_roi(rgs, model, device)
+
         arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
     torch.cuda.empty_cache()
     return list(map(tuple.__add__, arg_list1, map(lambda x:(x,) ,names)))
@@ -268,7 +326,7 @@ def save_poly_dict(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
     feature["type"] = "Feature"
     return feature
 
-def infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width):
+def infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width, stain):
     """
     Infer nuclei on regions of interest (ROIs) in parallel and save the results.
 
@@ -290,7 +348,7 @@ def infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,mo
 
     regions = np.array(multiproc_roi(load_roi,spaths,n_process))
     names = [os.path.basename(spath).rpartition('.')[0] for spath in spaths]
-    arg_list = processing_roi(regions, names,model,device,batch_to_gpu)
+    arg_list = processing_roi(regions, names,model,device,batch_to_gpu, stain)
     multiproc_roi(partial(post_processing_roi,outdir=outdir,threshold=threshold,poly_simplify_tolerance=poly_simplify_tolerance,color=color,width=width),arg_list,n_process,output=False)
 
 def main_roi(args) -> None:
@@ -316,6 +374,8 @@ def main_roi(args) -> None:
     width = args.width
     batch_to_gpu = args.batch_gpu
     color = args.color
+    stain = args.stain
+
     if n_process is None:
         n_process = os.cpu_count()
 
@@ -361,7 +421,7 @@ def main_roi(args) -> None:
     start=time.time()
     for spaths in tqdm(divide_batch(slide_dirs,batch_mem),desc="outer",leave=False,total=math.ceil(len(slide_dirs)/batch_mem)):
         try:
-            infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width)
+            infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width, stain)
         except Exception as e:
             logger.error(f"Batch {slide_dirs} failed: {e}", exc_info=True)
     end = time.time()-start

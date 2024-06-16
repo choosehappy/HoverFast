@@ -29,6 +29,11 @@ def get_args():
                         help="outputdir, default ./output/",
                         default="./output/",
                         type=str)
+    infer_wsi_parser.add_argument('-a', '--stain',
+                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
+                        choices=['he', 'ihc_dab'],
+                        default='he',
+                        type=str)
     infer_wsi_parser.add_argument('-b', '--binmask_dir',
                         help="quality control mask directory",
                         default=None,
@@ -78,6 +83,11 @@ def get_args():
     infer_roi_parser.add_argument('-o', '--outdir',
                         help="outputdir, default ./output/",
                         default="./output/",
+                        type=str)
+    infer_roi_parser.add_argument('-a', '--stain',
+                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
+                        choices=['he', 'ihc_dab'],
+                        default='he',
                         type=str)
     infer_roi_parser.add_argument('-m', '--model_path',
                         help="path to pre-trainned model",
