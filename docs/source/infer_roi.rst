@@ -13,6 +13,7 @@ The `infer_roi` parser allows you to configure various parameters for nuclei det
 - **-m, --model_path**: Path to the pre-trained model. Default is `./hoverfast_crosstissue_best_model.pth`.
 - **-p, --poly_simplify**: Float representing the tolerance for simplifying the polygons. Default is `6`.
 - **-s, --size_threshold**: Minimum size threshold for nuclei area in square micrometers. Default is `85`.
+- **-st --stain**: Staining type, choose between `he` and `ihc_dab`, default `he`.
 - **-r, --batch_mem**: Maximum batches saved in memory (RAM). Default is `500`.
 - **-g, --batch_gpu**: Target batch size for GPU. Default is calculated based on available GPU VRAM.
 - **-n, --n_process**: Number of workers for multiprocessing. Default is `os.cpu_count()`.
@@ -129,3 +130,17 @@ Explanation:
 - Color: Set the border color to red.
 - Output: Results saved in /path/to/output/.
 
+Segmenting Cells with Nuclear DAB Stain
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Using the new -st flag to specify the type of staining for segmentation. This example demonstrates the use of the ihc_dab option. This should be used when the DAB stain is nuclear. If the dab stain is cytoplasmic, regular H&E segmentation might be a better option.
+
+.. code-block:: sh
+
+    HoverFast infer_roi /path/to/rois/*.png -st ihc_dab -o /path/to/output/
+
+Explanation:
+
+    Input: ROIs located at /path/to/rois/.
+    Stain: Specifies the type of staining as ihc_dab.
+    Output: Results saved in /path/to/output/.

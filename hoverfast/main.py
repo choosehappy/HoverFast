@@ -29,17 +29,12 @@ def get_args():
                         help="outputdir, default ./output/",
                         default="./output/",
                         type=str)
-    infer_wsi_parser.add_argument('-a', '--stain',
-                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
-                        choices=['he', 'ihc_dab'],
-                        default='he',
-                        type=str)
     infer_wsi_parser.add_argument('-b', '--binmask_dir',
                         help="quality control mask directory",
                         default=None,
                         type=str)
     infer_wsi_parser.add_argument('-m', '--model_path',
-                        help="path to pre-trainned model",
+                        help="path to pre-trained model",
                         default= "./hoverfast_crosstissue_best_model.pth",
                         type=str)
     infer_wsi_parser.add_argument('-l', '--magnification',
@@ -54,6 +49,11 @@ def get_args():
                         help="minimum size threshold for nuclei area in square micrometer",
                         default=5,
                         type=float)
+    infer_wsi_parser.add_argument('-st', '--stain',
+                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
+                        choices=['he', 'ihc_dab'],
+                        default='he',
+                        type=str)
     infer_wsi_parser.add_argument('-r', '--batch_mem',
                         help="maximum batches saves on memory (RAM)",
                         default=500,
@@ -84,13 +84,8 @@ def get_args():
                         help="outputdir, default ./output/",
                         default="./output/",
                         type=str)
-    infer_roi_parser.add_argument('-a', '--stain',
-                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
-                        choices=['he', 'ihc_dab'],
-                        default='he',
-                        type=str)
     infer_roi_parser.add_argument('-m', '--model_path',
-                        help="path to pre-trainned model",
+                        help="path to pre-trained model",
                         default= "./hoverfast_crosstissue_best_model.pth",
                         type=str)
     infer_roi_parser.add_argument('-p', '--poly_simplify',
@@ -101,6 +96,11 @@ def get_args():
                         help="minimum size threshold for nuclei area in square micrometer",
                         default=85,
                         type=float)
+    infer_roi_parser.add_argument('-st', '--stain',
+                        help="Staining type, choose between 'he' and 'ihc_dab', default 'he'",
+                        choices=['he', 'ihc_dab'],
+                        default='he',
+                        type=str)
     infer_roi_parser.add_argument('-r', '--batch_mem',
                         help="maximum batches saves on memory",
                         default=500,

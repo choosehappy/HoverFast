@@ -90,6 +90,14 @@ You can give the path to the directory where the masks are stored. HoverFast wil
 HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output
 ```
 
+- **Example for IHC Nuclear DAB stain**
+
+If your IHC DAB stain is nuclear, you should use the ihc_dab flag to segment nuclei. If your IHC DAB stain is not nuclear, regular H&E segmentation might be a better option.
+
+```
+HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output -st ihc_dab
+```
+
 #### For Region of Interest (ROI) Inference
 
 - **Example Command**
