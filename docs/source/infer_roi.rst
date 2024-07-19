@@ -131,7 +131,7 @@ Explanation:
 - Output: Results saved in /path/to/output/.
 
 Segmenting Cells with Nuclear DAB Stain
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Using the new -st flag to specify the type of staining for segmentation. This example demonstrates the use of the ihc_dab option. This should be used when the DAB stain is nuclear. If the dab stain is cytoplasmic, regular H&E segmentation might be a better option.
 
@@ -141,6 +141,6 @@ Using the new -st flag to specify the type of staining for segmentation. This ex
 
 Explanation:
 
-    Input: ROIs located at /path/to/rois/.
-    Stain: Specifies the type of staining as ihc_dab.
-    Output: Results saved in /path/to/output/.
+- Input: Slides located at /path/to/slides/.
+- Stain: Specifies the type of staining as ihc_dab.
+- Output: Results saved in /path/to/output/.

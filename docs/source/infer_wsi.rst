@@ -174,6 +174,6 @@ Using the new -st flag to specify the type of staining for segmentation. This ex
 
 Explanation:
 
-    Input: Slides located at /path/to/slides/.
-    Stain: Specifies the type of staining as ihc_dab.
-    Output: Results saved in /path/to/output/.
+- Input: Slides located at /path/to/slides/.
+- Stain: Specifies the type of staining as ihc_dab.
+- Output: Results saved in /path/to/output/.
