@@ -154,11 +154,11 @@ HoverFast train data -o training_model -p /path/to/pytable_files/ -b 16 -n 20 -e
 ```
 
 ```
-docker run -it --gpus all -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -l training_metrics -p /app -b 16 -n 20 -e 100
+docker run -it --gpus all -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -o training_metrics -p /app -b 16 -n 20 -e 100
 ```
 
 ```
-singularity exec --nv hoverfast_latest.sif HoverFast train data -l training_metrics -p /path/to/pytables/ -b 16 -n 20 -e 100
+singularity exec --nv hoverfast_latest.sif HoverFast train data -o training_metrics -p /path/to/pytables/ -b 16 -n 20 -e 100
 ```
 
 ## Testing
