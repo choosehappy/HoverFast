@@ -251,7 +251,7 @@ def region_feature_roi(region,output_mask,dist, marker, opening,poly_simplify_to
         for i in range(len(temp)):
             poly = temp[i]
             cv2.polylines(img, [poly],-1,color_rgb,width)
-            cv2.fillPoly(label,[poly],len(features)+i)
+            cv2.fillPoly(label,[poly],len(features)+i+1)
         features += [save_poly_dict(poly.astype(float)) for poly in temp]
     #save to Json
     with gzip.open(os.path.join(outdir,'json', sname + ".json.gz"), 'wt', encoding="ascii") as zipfile:
