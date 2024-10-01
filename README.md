@@ -21,7 +21,7 @@ An overview of the documentation is provided in this repository, but for more de
 
 ### Prerequisites
 
-- Python 3.11
+- Python 3.11.5
 - CUDA installation for GPU support (version > 12.1.0)
 
 ### Using Docker
