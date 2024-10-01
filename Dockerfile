@@ -31,7 +31,7 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-py38_4.12.0-Linu
 ENV PATH /opt/conda/bin:$PATH
 
 # Install Python 3.11 using Conda
-RUN conda install -c anaconda python=3.11
+RUN conda install -c anaconda python=3.11.5
 
 # Install conda packages
 RUN conda install -c anaconda hdf5

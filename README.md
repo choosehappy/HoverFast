@@ -11,7 +11,7 @@ Welcome to the official repository of HoverFast, a high-performance tool designe
 
 ## Overview
 
-HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging. For more info on the inner workings of HoverFast, do not hesitate to go over our [preprint](https://arxiv.org/abs/2405.14028)
+HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging. For more info on the inner workings of HoverFast, do not hesitate to go over our [paper](https://joss.theoj.org/papers/10.21105/joss.07022#)
 
 ## Documentation
 
@@ -21,7 +21,7 @@ An overview of the documentation is provided in this repository, but for more de
 
 ### Prerequisites
 
-- Python 3.11
+- Python 3.11.5
 - CUDA installation for GPU support (version > 12.1.0)
 
 ### Using Docker
@@ -88,6 +88,14 @@ You can give the path to the directory where the masks are stored. HoverFast wil
 
 ```
 HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output
+```
+
+- **Example for IHC Nuclear DAB stain**
+
+If your IHC DAB stain is nuclear, you should use the ihc_dab flag to segment nuclei. If your IHC DAB stain is not nuclear, regular H&E segmentation might be a better option.
+
+```
+HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output -st ihc_dab
 ```
 
 #### For Region of Interest (ROI) Inference
@@ -185,12 +193,7 @@ For more detailed instructions, including setting up your environment and runnin
 If you use HoverFast in your research, please cite our paper:
 
 ```bibtex
-@article{liakopoulos2024hoverfast,
-  title={HoverFast: an accurate, high-throughput, clinically deployable nuclear segmentation tool for brightfield digital pathology images},
-  author={Liakopoulos, Petros and Massonnet, Julien and Bonjour, Jonatan and Mizrakli, Medya Tekes and Graham, Simon and Cuendet, Michel A and Seipel, Amanda H and Michielin, Olivier and Merkler, Doron and Janowczyk, Andrew},
-  journal={arXiv preprint arXiv:2405.14028},
-  year={2024}
-}
+@article{Liakopoulos2024, doi = {10.21105/joss.07022}, url = {https://doi.org/10.21105/joss.07022}, year = {2024}, publisher = {The Open Journal}, volume = {9}, number = {101}, pages = {7022}, author = {Petros Liakopoulos and Julien Massonnet and Jonatan Bonjour and Medya Tekes Mizrakli and Simon Graham and Michel A. Cuendet and Amanda H. Seipel and Olivier Michielin and Doron Merkler and Andrew Janowczyk}, title = {HoverFast: an accurate, high-throughput, clinically deployable nuclear segmentation tool for brightfield digital pathology images}, journal = {Journal of Open Source Software} }
 ```
 By citing HoverFast, you help us to continue our research and development. Thank you for your support!
 

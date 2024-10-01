@@ -1,0 +1,107 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "90332142-bc29-489c-9dd6-2abc981526f2",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [37, 260],
+            [33, 261],
+            [30, 262],
+            [25, 267],
+            [24, 274],
+            [26, 280],
+            [34, 289],
+            [44, 295],
+            [51, 294],
+            [56, 287],
+            [58, 282],
+            [56, 272],
+            [51, 266],
+            [51, 265],
+            [46, 263],
+            [37, 260]
+          ]
+        ]
+      },
+      "properties": {
+        "objectType": "annotation"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "74a6bc7c-51f6-41e8-b504-5b9b94f904da",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [268, 440],
+            [261, 441],
+            [260, 442],
+            [257, 447],
+            [255, 454],
+            [257, 459],
+            [260, 462],
+            [266, 459],
+            [269, 448],
+            [268, 440]
+          ]
+        ]
+      },
+      "properties": {
+        "objectType": "annotation"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "8434127c-0ba6-4870-8ac6-5a8bd1ea24d8",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [350, 298],
+            [342, 305],
+            [343, 312],
+            [347, 316],
+            [359, 319],
+            [366, 318],
+            [372, 314],
+            [374, 309],
+            [369, 300],
+            [358, 299],
+            [350, 298]
+          ]
+        ]
+      },
+      "properties": {
+        "objectType": "annotation"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "cf289108-a423-44bf-97cb-d6c74efdf4b0",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [451, 325],
+            [430, 329],
+            [416, 344],
+            [414, 358],
+            [418, 369],
+            [427, 375],
+            [449, 361],
+            [457, 343],
+            [451, 325]
+          ]
+        ]
+      },
+      "properties": {
+        "objectType": "annotation"
+      }
+    }
+  ]
+}

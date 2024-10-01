@@ -20,6 +20,8 @@ import logging
 import datetime
 import glob
 import time
+from skimage.color import rgb2hed, hed2rgb
+from .utils_stain_deconv import *
 
 def magnification_from_mpp(mpp): 
     """
@@ -179,6 +181,55 @@ def load_region(coords,slide_data):
         out.append(np.array(rgba2rgb(region)))
     return out
 
+def predict_ihc(regions, model, device):
+    """
+    Perform nuclei detection with stain deconvolution on regions using a pre-trained model.
+
+    This function transfers regions to the GPU, performs nuclei detection using the model,
+    and processes the output to return binary masks and feature maps.
+
+    Parameters:
+    regions (numpy.ndarray): Array of regions to be processed.
+    model (torch.nn.Module): Pre-trained model for nuclei detection.
+    device (torch.device): Device to perform computation on (GPU or CPU).
+
+    Returns:
+    tuple:
+        output_cpu (numpy.ndarray): Binary masks indicating detected nuclei.
+        maps_final (numpy.ndarray): Feature maps for further processing.
+    """
+    # Transfer regions to GPU as a torch tensor
+
+    regions_gpu = torch.from_numpy(regions).half().to(device, memory_format=torch.channels_last)
+
+    regions_gpu = regions_gpu / 255
+
+    # Convert to hed
+    hed_batch = rgb_to_hed_torch(regions_gpu, device)
+
+    # Extract Hematoxylin channel
+    regions_hematoxylin = extract_h_channel_and_stack(hed_batch)
+
+    # Convert HED back to RGB
+    reconstructed_rgb_batch = hed_to_rgb_torch(regions_hematoxylin, device)
+
+    # Scale and transpose
+    regions_gpu = reconstructed_rgb_batch.permute(0, 3, 1, 2)
+
+    # Model prediction
+    output, maps = model(regions_gpu)
+    
+    # Post-processing
+    output_processed = output.argmax(axis=1).type(torch.bool)
+    
+    # Move the final results to CPU and convert to numpy
+    output_cpu = output_processed.detach().cpu().numpy()
+    maps_cpu = maps.detach().cpu().numpy()
+    maps_final = maps_cpu.astype(np.float32)
+
+    return output_cpu,maps_final
+
+
 def predict(regions, model, device):
     """
     Perform nuclei detection on regions using a pre-trained model.
@@ -198,10 +249,10 @@ def predict(regions, model, device):
     """
     # Transfer regions to GPU as a torch tensor
     regions_gpu = torch.from_numpy(regions).half().to(device, memory_format=torch.channels_last)
-    
+
     # Scale and transpose
     regions_gpu = regions_gpu.permute(0, 3, 1, 2) / 255
-    
+
     # Model prediction
     output, maps = model(regions_gpu)
     
@@ -461,7 +512,7 @@ def preload_batch(batch_coords,slide_data,n_process):
     regions = multiproc(partial(load_region,slide_data = slide_data),list(divide_batch(batch_coords,int(np.ceil(batch_coords.shape[0]/n_process)))),n_process)
     return np.array(regions)
 
-def processing(batch_coords,slide_data,model,device,batch_to_gpu,n_process):
+def processing(batch_coords,slide_data,model,device,batch_to_gpu,n_process, stain):
     """
     Process a batch of regions for nuclei detection.
 
@@ -482,13 +533,16 @@ def processing(batch_coords,slide_data,model,device,batch_to_gpu,n_process):
     arg_list1 = []
     for regions in tqdm(divide_batch(loaded_batch,batch_to_gpu),desc="inner",leave=False, total = math.ceil(len(loaded_batch)/batch_to_gpu)):
         
-        output_mask, maps = predict(regions, model, device)
+        if stain == "ihc_dab":
+            output_mask, maps = predict_ihc(regions, model, device)
+        else:
+            output_mask, maps = predict(regions, model, device)
         
         arg_list1 += [(output_mask[j], maps[j]) for j in range(len(output_mask))]
     torch.cuda.empty_cache()
     return list(map(tuple.__add__, arg_list1, map(lambda x:(x,) ,list(batch_coords))))
 
-def infer_on_batches(batch_coords,slide_data,model,device,batch_to_gpu,n_process,features_queue):
+def infer_on_batches(batch_coords,slide_data,model,device,batch_to_gpu,n_process,stain, features_queue):
     """
     Perform nuclei detection on batches of regions.
 
@@ -507,7 +561,7 @@ def infer_on_batches(batch_coords,slide_data,model,device,batch_to_gpu,n_process
     Returns:
     int: Total number of features extracted.
     """
-    arg_list1 = processing(batch_coords,slide_data,model,device,batch_to_gpu,n_process)
+    arg_list1 = processing(batch_coords,slide_data,model,device,batch_to_gpu,n_process, stain)
     pool = multiprocessing.Pool(processes=n_process)
     results = list(pool.imap(partial(post_processing,slide_data=slide_data, features_queue=features_queue),divide_batch(arg_list1,int(np.ceil(len(arg_list1)/n_process)))))
     pool.close()
@@ -599,7 +653,7 @@ def get_slide(sname,sformat,fpath,mag,kernel_size,region_size,threshold,outdir,p
 
     return slide_data
 
-def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,logger):
+def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain,logger):
     """
     Perform nuclei detection on a whole slide image (WSI).
 
@@ -649,7 +703,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,
     writer_process = multiprocessing.Process(target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz")))
     writer_process.start()
     for batch_coords in tqdm(divide_batch(coords,batch_on_mem),desc="outer",leave=False,total=math.ceil(len(coords)/batch_on_mem)):
-        size += infer_on_batches(batch_coords,slide_data,model,device,batch_to_gpu,n_process,features_queue)
+        size += infer_on_batches(batch_coords,slide_data,model,device,batch_to_gpu,n_process,stain,features_queue)
     features_queue.put(None)
     writer_process.join()
     return len(coords),size
@@ -679,6 +733,8 @@ def main_wsi(args) -> None:
     model_path = args.model_path
     poly_simplify_tolerance = args.poly_simplify
     threshold = args.size_threshold
+    stain = args.stain
+
     if n_process is None:
         n_process = os.cpu_count()
 
@@ -731,7 +787,7 @@ def main_wsi(args) -> None:
         
         try:
             start=time.time()
-            n_patches,n_objects = infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,logger)
+            n_patches,n_objects = infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_on_mem,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain, logger)
             stats[sname].append(n_patches)
             stats[sname].append(n_objects)
             stats[sname].append(time.time()-start)

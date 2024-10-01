@@ -1,4 +1,5 @@
 ujson
+numpy==1.26.2
 shapely
 tqdm
 opencv-python
