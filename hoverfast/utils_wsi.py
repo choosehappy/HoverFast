@@ -144,7 +144,7 @@ def find_regions(mask_dir, slide_data):
         level = np.argwhere(np.array(osh.level_downsamples)-32 <= 10**-2).reshape(-1)[-1]
         upscale_factor = osh.level_downsamples[level]
         mask = rgba2rgb(osh.read_region((slide_data['xb'], slide_data['yb']), level,(round(slide_data['width']/upscale_factor),round(slide_data['height']/upscale_factor)))).convert('L')
-        mask = cv2.adaptiveThreshold(np.asarray(mask),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
+        mask = cv2.adaptiveThreshold(np.asarray(mask),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,11,2)
     else:
         # load binary mask
         mask = Image.open(os.path.join(mask_dir,slide_data['sname']+'.png')).convert('L')
@@ -175,7 +175,7 @@ def load_region(coords,slide_data):
     osh = openslide.open_slide(os.path.join(slide_data['fpath'],slide_data['sname']+f".{slide_data['format']}"))
     out = []
     for coord in coords:
-        region = osh.read_region((slide_data['xb'] + coord[0], slide_data['yb'] + coord[1]), slide_data['level'], (int(slide_data['region_size']*(slide_data['working_d']/slide_data['downfactor'])),)*2)
+        region = osh.read_region((slide_data['xb'] + coord[0], slide_data['yb'] + coord[1]), slide_data['level'], (int(slide_data['region_size']*(slide_data['downfactor']/slide_data['working_d'])),)*2)
         if slide_data['working_d'] != slide_data['downfactor']:
             region=region.resize((slide_data['region_size'],)*2)
         out.append(np.array(rgba2rgb(region)))
