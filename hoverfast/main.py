@@ -54,10 +54,6 @@ def get_args():
                         choices=['he', 'ihc_dab'],
                         default='he',
                         type=str)
-    infer_wsi_parser.add_argument('-r', '--batch_mem',
-                        help="maximum batches saves on memory (RAM)",
-                        default=500,
-                        type=int)
     infer_wsi_parser.add_argument('-g', '--batch_gpu',
                         help="Target batch size for GPU: +1 in batch ~ +2GB VRAM (for pretrain model). Avoid matching or exceeding estimated GPU VRAM.",
                         default=int(np.round(torch.cuda.mem_get_info()[1]/1024**3))//2-1 if torch.cuda.is_available() else 1,
