@@ -20,12 +20,29 @@ import logging
 import datetime
 import glob
 import time
-from .utils_wsi import load_model, divide_batch, pre_watershed
+from .utils_wsi import load_model, pre_watershed
 from .utils_stain_deconv import *
 from skimage.color import rgb2hed, hed2rgb
 
 
 int_coords = lambda x: np.array(x).round().astype(np.int32)
+
+def divide_batch(l, n):
+    """
+    Split data into batches.
+
+    This helper function divides a list into smaller batches of a specified size.
+
+    Parameters:
+    l (list): The list to be divided into batches.
+    n (int): The size of each batch.
+
+    Yields:
+    list: A batch of the input list with size `n`. The last batch may be smaller if there are fewer than `n` elements remaining.
+    """ 
+
+    for i in range(0, len(l), n):  
+        yield l[i:i + n]
 
 def load_roi(spaths):
     """
