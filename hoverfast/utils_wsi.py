@@ -551,6 +551,10 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     Returns:
     tuple: Total number of regions processed and total number of nuclei detected.
     """
+    
+    n_post_proc = max(1, n_process // 2)   
+    n_loader = max(1, n_process - n_post_proc)
+    
     kernel_size = 256
     slide_data = get_slide(sname,sformat,fpath,mag,kernel_size,region_size,threshold,outdir,poly_simplify_tolerance,logger)
     
@@ -564,7 +568,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
         dataset, 
         batch_size=batch_to_gpu, 
         shuffle=False, 
-        num_workers=n_process, 
+        num_workers=n_loader, 
         pin_memory=True,
         prefetch_factor=2 
     )
@@ -575,7 +579,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     writer_process.start()
 
     # 3. Setup Post-Processing Pool
-    post_proc_pool = multiprocessing.Pool(processes=n_process)
+    post_proc_pool = multiprocessing.Pool(processes=n_post_proc)
     
     total_objects = 0
     async_results = []
