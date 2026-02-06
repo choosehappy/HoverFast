@@ -449,7 +449,7 @@ def find_regions(mask_dir, slide_data):
         mask = rgba2rgb(osh.read_region((slide_data['xb'], slide_data['yb']), level,(round(slide_data['width']/upscale_factor),round(slide_data['height']/upscale_factor)))).convert('L')
         mask = cv2.adaptiveThreshold(np.asarray(mask),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV,11,2)
     else:
-        mask = Image.open(os.path.join(mask_dir,slide_data['sname']+'_mask.png')).convert('L')
+        mask = Image.open(os.path.join(mask_dir,slide_data['sname']+'.png')).convert('L')
         upscale_factor = round(slide_data['width'] / mask.size[0])
     
     pts = np.argwhere(mask)
@@ -699,3 +699,4 @@ def main_wsi(args) -> None:
         except Exception as e:
             logger.error(f"File {sname} failed: {e}", exc_info=True)
             print(f"Error processing {sname}: {e}")
+
