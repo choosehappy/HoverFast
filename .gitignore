@@ -1,0 +1,5 @@
+*.svs
+**/*.log
+**/*.pyc
+HoverFast.egg-info/*
+**/*.gz
