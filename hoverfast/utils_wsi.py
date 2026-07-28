@@ -1,3 +1,6 @@
+from multiprocessing import shared_memory
+from multiprocessing.resource_tracker import unregister
+
 import datetime
 import glob
 import gzip
@@ -28,6 +31,13 @@ from .hoverfast import HoverFast
 from .utils_stain_deconv import *
 
 # --- Helper Functions ---
+
+def to_shared(arr):
+    shm = shared_memory.SharedMemory(create=True, size=arr.nbytes)
+    shared_arr = np.ndarray(arr.shape, dtype=arr.dtype, buffer=shm.buf)
+    shared_arr[:] = arr[:]
+    return shm, arr.shape, arr.dtype
+
 
 def magnification_from_mpp(mpp): 
     """
@@ -66,6 +76,7 @@ def load_model(model_path, device):
 
     model = model.half()  # Convert the model to float16 (half precision) for faster inference
     model.eval()
+    #model = torch.compile(model)
     return model
 
 def rgba2rgb(img):
@@ -407,7 +418,9 @@ def region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
     
     return output
 
-def post_processing_batch_task(output_batch, maps_batch, coords_batch, slide_data, features_queue):
+def post_processing_batch_task(mask_shm_name, mask_shape, mask_dtype,
+                                maps_shm_name, maps_shape, maps_dtype,
+                                coords_batch, slide_data, features_queue):
     """
     Worker function for the multiprocessing pool to handle post-processing.
 
@@ -422,21 +435,35 @@ def post_processing_batch_task(output_batch, maps_batch, coords_batch, slide_dat
     Returns:
     int: Total number of features extracted in this batch.
     """
-    total_features = 0
-    for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
-        dist, marker, opening = pre_watershed(output_mask, maps)
-        if marker is None:
-            continue
-        
-        # Extract features
-        features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
-        
-        if features:
-            # Join them into a string and put in queue
-            features_queue.put(",\n".join(features))
-            total_features += len(features)
+
+    mask_shm = shared_memory.SharedMemory(name=mask_shm_name)
+    output_batch = np.ndarray(mask_shape, dtype=mask_dtype, buffer=mask_shm.buf)
+    maps_shm = shared_memory.SharedMemory(name=maps_shm_name)
+    maps_batch = np.ndarray(maps_shape, dtype=maps_dtype, buffer=maps_shm.buf)
+
+    try:
+        total_features = 0
+        for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
+            dist, marker, opening = pre_watershed(output_mask, maps)
+            if marker is None:
+                continue
             
-    return total_features
+            # Extract features
+            features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
+            
+            if features:
+                # Join them into a string and put in queue
+                features_queue.put(",\n".join(features))
+                total_features += len(features)
+        return total_features
+    finally:
+        mask_shm.close()
+        mask_shm.unlink()
+
+        maps_shm.close()       
+        maps_shm.unlink()
+
+    
 
 # --- Main Pipeline Logic ---
 
@@ -615,6 +642,9 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             output_cpu = output_mask.to("cpu",non_blocking=True).numpy()
             maps_cpu = maps.to("cpu",non_blocking=True).float().numpy()
 
+
+
+
             coords_cpu = batch_coords_tensor.numpy()
             
             # Prepare batch data for the pool
@@ -630,9 +660,27 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             #     args=(batch_data, slide_data, features_queue)
             # )
 
+            
+
+
+
+            shm_mask, mask_shape, mask_dtype = to_shared(output_cpu)
+            shm_maps, maps_shape, maps_dtype = to_shared(maps_cpu)
+            
+
+            # 1. Unregister from main's resource tracker so Python stops trying to track/delete it
+            unregister(shm_mask._name, "shared_memory")
+            unregister(shm_maps._name, "shared_memory")
+
+            # 2. Close main's local handle right away since main won't read it anymore
+            shm_mask.close()
+            shm_maps.close()
+
             res = post_proc_pool.apply_async(
-            post_processing_batch_task,
-            args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
+                post_processing_batch_task,
+                args=(shm_mask.name, mask_shape, mask_dtype,
+                    shm_maps.name, maps_shape, maps_dtype,
+                    coords_cpu, slide_data, features_queue)
             )
 
             async_results.append(res)
