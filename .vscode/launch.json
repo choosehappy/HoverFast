@@ -10,7 +10,7 @@
             "request": "launch",
             "module": "hoverfast.main",
             "args": ["infer_wsi","/workspaces/HoverFast/wsi.svs","-m",
-            "/workspaces/HoverFast/hoverfast_crosstissue_best_model.pth", "-n", "8", "-o", "hoverfast_output"]
+            "/workspaces/HoverFast/hoverfast_crosstissue_best_model.safetensors", "-n", "8", "-o", "hoverfast_output"]
         }
     ]
 }

@@ -1,3 +1,6 @@
+import json
+from safetensors import safe_open
+import safetensors.torch
 from pathlib import Path
 import numpy as np
 import multiprocessing
@@ -50,11 +53,18 @@ def load_model(model_path, device):
     Returns:
     torch.nn.Module: Loaded model ready for inference.
     """
-    checkpoint = torch.load(model_path, weights_only=False, map_location=lambda storage, loc: storage)
-    model = HoverFast(n_classes=checkpoint["n_classes"], in_channels=checkpoint["in_channels"],
-                      padding=checkpoint["padding"], depth=checkpoint["depth"], wf=checkpoint["wf"],
-                      up_mode=checkpoint["up_mode"], batch_norm=checkpoint["batch_norm"], conv_block=checkpoint["conv_block"]).to(device, memory_format=torch.channels_last)
-    model.load_state_dict(checkpoint["model_dict"])
+
+    # 1. Inspect metadata without loading tensors into RAM
+    with safe_open(model_path, framework="pt") as f:
+        metadata = f.metadata()
+        config = json.loads(metadata["config"])
+
+    # 2. Instantiate HoverFast using the extracted parameters
+    model = HoverFast(**config).to(device, memory_format=torch.channels_last)
+
+    # 3. Load weights directly into the instantiated model instance
+    safetensors.torch.load_model(model, model_path)
+
     model = model.half()  # Convert the model to float16 (half precision) for faster inference
     model.eval()
     return model

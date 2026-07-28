@@ -35,7 +35,7 @@ def get_args():
                         type=str)
     infer_wsi_parser.add_argument('-m', '--model_path',
                         help="path to pre-trained model",
-                        default= "./hoverfast_crosstissue_best_model.pth",
+                        default= "./hoverfast_crosstissue_best_model.safetensors",
                         type=str)
     infer_wsi_parser.add_argument('-l', '--magnification',
                         help="magnification to work on",
@@ -82,7 +82,7 @@ def get_args():
                         type=str)
     infer_roi_parser.add_argument('-m', '--model_path',
                         help="path to pre-trained model",
-                        default= "./hoverfast_crosstissue_best_model.pth",
+                        default= "./hoverfast_crosstissue_best_model.safetensors",
                         type=str)
     infer_roi_parser.add_argument('-p', '--poly_simplify',
                         help="float representing the tolerance for simplifying the polygons",
