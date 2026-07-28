@@ -43,6 +43,8 @@ RUN rm -rf /var/lib/apt/lists/*
 WORKDIR /
 COPY ./ /HoverFast
 WORKDIR /HoverFast
-RUN pip install .
+
+RUN pip install uv
+RUN uv pip install . --system
 
 WORKDIR /app
