@@ -1,12 +1,10 @@
 import argparse
 
 import torch
+import numpy as np
+
 
 from . import __version__
-from .hoverfast import *
-from .training_utils import *
-from .utils_roi import *
-from .utils_wsi import *
 
 
 def get_args():
@@ -165,12 +163,15 @@ def get_args():
 def main() -> None:
     args = get_args()
     if args.mode == "infer_wsi":
+        from .utils_wsi import main_wsi
         main_wsi(args)
     
     elif args.mode == "infer_roi":
+        from .utils_roi import main_roi
         main_roi(args)
 
     elif args.mode == "train":
+        from .training_utils import main_train
         main_train(args)
 
     else:

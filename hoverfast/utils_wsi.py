@@ -199,7 +199,7 @@ class WSIPatchDataset(Dataset):
         # Convert to Tensor and Normalize (0-1)
         # Permute to (C, H, W)
         img_np = np.array(img)
-        tensor = torch.from_numpy(img_np).permute(2, 0, 1).float() / 255.0
+        tensor = torch.from_numpy(img_np).permute(2, 0, 1)# .float() / 255.0
         
         return tensor, coord
 
@@ -257,8 +257,10 @@ def predict_batch(regions_gpu, model):
     
     # Post-processing prep
     output_processed = output.argmax(axis=1).type(torch.bool)
-    
-    return output_processed, maps
+
+    maps_fp8 = maps.to(torch.float8_e4m3fn)
+
+    return output_processed, maps_fp8
 
 # --- Post Processing Logic ---
 
@@ -580,7 +582,9 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
         shuffle=False, 
         num_workers=n_loader, 
         pin_memory=True,
-        prefetch_factor=2 
+        prefetch_factor=4,
+        persistent_workers=True
+         
     )
 
     # 2. Setup Output Queue and Writer
@@ -598,7 +602,9 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
         for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
             
             # --- GPU Inference ---
-            batch_imgs = batch_imgs.to(device, memory_format=torch.channels_last).half()
+            batch_imgs = batch_imgs.to(device, memory_format=torch.channels_last, non_blocking=True) #move over as uint8 - faster than 32 and 16
+            batch_imgs = batch_imgs.half()
+            batch_imgs = batch_imgs.div(255.0)
             
             if stain == "ihc_dab":
                 output_mask, maps = predict_ihc_batch(batch_imgs, model, device)
@@ -606,11 +612,14 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
                 output_mask, maps = predict_batch(batch_imgs, model)
             
             # --- Move to CPU for Post-Processing ---
-            output_cpu = output_mask.cpu().numpy()
-            maps_cpu = maps.cpu().numpy().astype(np.float32)
+            output_cpu = output_mask.to("cpu",non_blocking=True).numpy()
+            maps_cpu = maps.to("cpu",non_blocking=True).float().numpy()
+
             coords_cpu = batch_coords_tensor.numpy()
             
             # Prepare batch data for the pool
+            
+            torch.cuda.synchronize()
             batch_data = []
             for i in range(len(output_cpu)):
                 batch_data.append((output_cpu[i], maps_cpu[i], coords_cpu[i]))

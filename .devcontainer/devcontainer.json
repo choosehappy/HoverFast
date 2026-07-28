@@ -12,7 +12,8 @@
 	"runArgs": [
         "--gpus",
         "all",
-		"--shm-size=8g"
+		"--shm-size=8g",
+		"--cap-add=SYS_PTRACE" // needed for py-spy
     ]
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
