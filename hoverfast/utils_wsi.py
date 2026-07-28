@@ -407,7 +407,7 @@ def region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
     
     return output
 
-def post_processing_batch_task(batch_data, slide_data, features_queue):
+def post_processing_batch_task(output_batch, maps_batch, coords_batch, slide_data, features_queue):
     """
     Worker function for the multiprocessing pool to handle post-processing.
 
@@ -423,7 +423,7 @@ def post_processing_batch_task(batch_data, slide_data, features_queue):
     int: Total number of features extracted in this batch.
     """
     total_features = 0
-    for output_mask, maps, region_coord in batch_data:
+    for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
         dist, marker, opening = pre_watershed(output_mask, maps)
         if marker is None:
             continue
@@ -620,15 +620,21 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             # Prepare batch data for the pool
             
             torch.cuda.synchronize()
-            batch_data = []
-            for i in range(len(output_cpu)):
-                batch_data.append((output_cpu[i], maps_cpu[i], coords_cpu[i]))
+            # batch_data = []
+            # for i in range(len(output_cpu)):
+            #     batch_data.append((output_cpu[i], maps_cpu[i], coords_cpu[i]))
             
-            # --- Async Post-Processing ---
+            # # --- Async Post-Processing ---
+            # res = post_proc_pool.apply_async(
+            #     post_processing_batch_task, 
+            #     args=(batch_data, slide_data, features_queue)
+            # )
+
             res = post_proc_pool.apply_async(
-                post_processing_batch_task, 
-                args=(batch_data, slide_data, features_queue)
+            post_processing_batch_task,
+            args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
             )
+
             async_results.append(res)
 
     # Wait for all post-processing to finish
