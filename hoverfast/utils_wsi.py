@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import multiprocessing
 import openslide
@@ -672,8 +673,13 @@ def main_wsi(args) -> None:
     torch.backends.cudnn.benchmark=True
     model = load_model(model_path,device)
 
-    if len(slide_dirs)==1:
-        slide_dirs = glob.glob(slide_dirs[0])
+    if len(slide_dirs) == 1:
+        pattern = slide_dirs[0]
+
+        if glob.has_magic(pattern):
+            slide_dirs = glob.glob(pattern)
+        else:
+            slide_dirs = [pattern]
 
     if not slide_dirs:
         logger.error("No slides detected.")
