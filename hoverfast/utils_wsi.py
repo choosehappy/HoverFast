@@ -674,7 +674,7 @@ def main_wsi(args) -> None:
     threshold = args.size_threshold
     stain = args.stain
 
-    multiprocessing.set_start_method('spawn', force=True)
+    multiprocessing.set_start_method('fork', force=True)
     
     if n_process is None:
         n_process = os.cpu_count()
