@@ -1,29 +1,28 @@
-import numpy as np
-import multiprocessing
-from shapely.geometry import Polygon
-import gzip
-import ujson
-from functools import partial
-from PIL import Image
-import torch
-from .hoverfast import HoverFast
-import scipy.ndimage as ndi
-import cv2
-import math
-from skimage.segmentation import watershed
-from shapely.validation import make_valid
-from tqdm import tqdm
-import os
-from skimage.measure import regionprops
-from matplotlib.colors import to_rgb
-import logging
 import datetime
 import glob
+import gzip
+import logging
+import math
+import multiprocessing
+import os
 import time
-from .utils_wsi import load_model, pre_watershed
-from .utils_stain_deconv import *
-from skimage.color import rgb2hed, hed2rgb
+from functools import partial
 
+import cv2
+import numpy as np
+import scipy.ndimage as ndi
+import torch
+import ujson
+from matplotlib.colors import to_rgb
+from PIL import Image
+from shapely.geometry import Polygon
+from shapely.validation import make_valid
+from skimage.measure import regionprops
+from skimage.segmentation import watershed
+from tqdm import tqdm
+
+from .utils_stain_deconv import *
+from .utils_wsi import load_model, pre_watershed
 
 int_coords = lambda x: np.array(x).round().astype(np.int32)
 
@@ -274,8 +273,8 @@ def region_feature_roi(region,output_mask,dist, marker, opening,poly_simplify_to
     with gzip.open(os.path.join(outdir,'json', sname + ".json.gz"), 'wt', encoding="ascii") as zipfile:
         if len(features)!=0:
             ujson.dump(features,zipfile)
-    Image.fromarray(img).save(os.path.join(outdir,'overlay',sname+f'_overlay.png'))
-    Image.fromarray(label).save(os.path.join(outdir,'label_mask',sname+f'_label_mask.png'))
+    Image.fromarray(img).save(os.path.join(outdir,'overlay',sname+'_overlay.png'))
+    Image.fromarray(label).save(os.path.join(outdir,'label_mask',sname+'_label_mask.png'))
 
 def processing_roi(regions,names,model,device,batch_to_gpu, stain):
     """

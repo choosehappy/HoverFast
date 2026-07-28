@@ -1,10 +1,12 @@
 import argparse
+
 import torch
-from .utils_wsi import *
-from .training_utils import *
-from .hoverfast import *
-from .utils_roi import *
+
 from . import __version__
+from .hoverfast import *
+from .training_utils import *
+from .utils_roi import *
+from .utils_wsi import *
 
 
 def get_args():

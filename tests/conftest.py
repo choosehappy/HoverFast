@@ -2,6 +2,7 @@ import hashlib
 import pathlib
 import shutil
 import urllib.request
+
 import pytest
 
 # openslide aperio test images

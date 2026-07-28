@@ -1,11 +1,7 @@
 import os
-import shutil
-import textwrap
-import pytest
-import openslide
-import cv2
-from subprocess import getstatusoutput, getoutput
+from subprocess import getstatusoutput
 
+import pytest
 
 PRG = 'HoverFast'
 DATASET_PATH = 'tests/data/'

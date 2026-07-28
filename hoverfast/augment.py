@@ -1,8 +1,10 @@
-from albumentations.core.transforms_interface import ImageOnlyTransform
-from albumentations import *
-import numpy as np
-from skimage.color import rgb2hed, hed2rgb
 import numbers
+
+import numpy as np
+from albumentations import *
+from albumentations.core.transforms_interface import ImageOnlyTransform
+from skimage.color import hed2rgb, rgb2hed
+
 
 class HEDJitterAugmentation(ImageOnlyTransform):
     """
@@ -19,7 +21,7 @@ class HEDJitterAugmentation(ImageOnlyTransform):
     """
 
     def __init__(self,alpha,beta,always_apply=False,p=0.5):
-        super(HEDJitterAugmentation, self).__init__(always_apply, p)
+        super().__init__(always_apply, p)
         if isinstance(alpha,numbers.Number):
             self.alpha = (-alpha,alpha)
         elif isinstance(alpha,tuple):

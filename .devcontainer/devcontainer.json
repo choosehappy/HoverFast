@@ -11,7 +11,8 @@
 
 	"runArgs": [
         "--gpus",
-        "all"
+        "all",
+		"--shm-size=8g"
     ]
 
 	// Features to add to the dev container. More info: https://containers.dev/features.

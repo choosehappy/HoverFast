@@ -1,31 +1,30 @@
-import json
-from safetensors import safe_open
-import safetensors.torch
-from pathlib import Path
-import numpy as np
-import multiprocessing
-import openslide
-from shapely.geometry import Polygon
-import gzip
-import ujson
-from functools import partial
-from PIL import Image
-import torch
-from torch.utils.data import Dataset, DataLoader
-from .hoverfast import HoverFast
-import scipy.ndimage as ndi
-import cv2
-import math
-from skimage.segmentation import watershed
-from shapely.validation import make_valid
-from tqdm import tqdm
-import os
-from skimage.measure import regionprops
-import logging
 import datetime
 import glob
+import gzip
+import json
+import logging
+import math
+import multiprocessing
+import os
 import time
-from skimage.color import rgb2hed, hed2rgb
+
+import cv2
+import numpy as np
+import openslide
+import safetensors.torch
+import scipy.ndimage as ndi
+import torch
+import ujson
+from PIL import Image
+from safetensors import safe_open
+from shapely.geometry import Polygon
+from shapely.validation import make_valid
+from skimage.measure import regionprops
+from skimage.segmentation import watershed
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+from .hoverfast import HoverFast
 from .utils_stain_deconv import *
 
 # --- Helper Functions ---

@@ -1,25 +1,27 @@
-import torch
-import torch.nn as nn
-import tables
-import time
-import torch.nn.functional as F
+import datetime
 import math
-from albumentations import *
+import os
+import time
+
 import numpy as np
 import skimage.morphology as ndi
+import tables
+import torch
+import torch.nn.functional as F
+from albumentations import *
 from skimage.measure import regionprops
-from .hoverfast import HoverFast
-from .augment import *
-from torch.utils.data import DataLoader
-from .training_utils import *
-from tqdm import tqdm
-from torchmetrics.classification import BinaryConfusionMatrix
-import os
-import datetime
 from tensorboardX import SummaryWriter
+from torch import nn
+from torch.utils.data import DataLoader
+from torchmetrics.classification import BinaryConfusionMatrix
+from tqdm import tqdm
+
+from .augment import *
+from .hoverfast import HoverFast
+from .training_utils import *
 
 
-class Dataset(object):
+class Dataset:
     def __init__(self, fname, device ,transforms=None, edge_weight= False):
         """
         Initialize the Dataset object.
@@ -189,7 +191,7 @@ class Criterion(nn.Module):
         crossentropy_weight (float): Weight for cross-entropy loss.
         """
 
-        super(Criterion, self).__init__()
+        super().__init__()
         self.critCEntropy = nn.CrossEntropyLoss(weight = class_weight, ignore_index = -100 , reduction='none')
         self.critGrad = nn.MSELoss(reduction='none')
         self.crithv = nn.MSELoss(reduction='none')
@@ -405,4 +407,4 @@ def main_train(args) -> None:
 
             torch.save(state, f"{outdir}/{dataname}_best_model.pth")
         else:
-            print("")
+            print()

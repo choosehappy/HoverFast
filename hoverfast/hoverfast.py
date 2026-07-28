@@ -1,8 +1,8 @@
 # Adapted from https://discuss.pytorch.org/t/unet-implementation/426
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class HoverFast(nn.Module):
@@ -29,7 +29,7 @@ class HoverFast(nn.Module):
     def __init__(self, in_channels=1, n_classes=2, depth=5, wf=6, padding=False,
                  batch_norm=False, up_mode='upconv',conv_block="msunet"):
 
-        super(HoverFast, self).__init__()
+        super().__init__()
         assert up_mode in ('upconv', 'upsample')
         assert conv_block in ('unet', 'msunet')
         self.padding = padding
@@ -105,7 +105,7 @@ class UNetConvBlock(nn.Module):
     kernel (int): Size of the convolutional kernel. Default is 3.
     """
     def __init__(self, in_size, out_size, padding, batch_norm, kernel=3):
-        super(UNetConvBlock, self).__init__()
+        super().__init__()
         block = []
 
         block.append(nn.Conv2d(in_size, out_size, kernel_size=kernel,
@@ -150,7 +150,7 @@ class MSUNetConvBlock(nn.Module):
     """
 
     def __init__(self, ch_in, ch_out, padding, batch_norm):
-        super(MSUNetConvBlock, self).__init__()
+        super().__init__()
         self.conv_3 = UNetConvBlock(ch_in, ch_out,padding,batch_norm,kernel=3)
         self.conv_7 = UNetConvBlock(ch_in, ch_out,3*padding,batch_norm,kernel=7)
         self.conv = nn.Conv2d(ch_out * 2, ch_out, kernel_size=1)
@@ -188,7 +188,7 @@ class UNetUpBlock(nn.Module):
     """
 
     def __init__(self, in_size, out_size, up_mode, padding, batch_norm, conv_block):
-        super(UNetUpBlock, self).__init__()
+        super().__init__()
         if up_mode == 'upconv':
             self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2,
                                          stride=2)

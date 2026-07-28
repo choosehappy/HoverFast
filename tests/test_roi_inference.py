@@ -1,11 +1,7 @@
 import os
-import shutil
-import textwrap
-import pytest
-import openslide
-import cv2
-from subprocess import getstatusoutput, getoutput
+from subprocess import getstatusoutput
 
+import pytest
 
 PRG = 'HoverFast'
 MODEL_PATH = 'hoverfast_crosstissue_best_model.pth'
