@@ -3,6 +3,7 @@ import argparse
 import torch
 import numpy as np
 
+torch.cuda.init()
 
 from . import __version__
 

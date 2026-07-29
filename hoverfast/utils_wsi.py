@@ -1,6 +1,7 @@
 from multiprocessing import shared_memory
 from multiprocessing.resource_tracker import unregister
 
+
 import datetime
 import glob
 import gzip
@@ -64,7 +65,7 @@ def load_model(model_path, device):
     """
 
 
-    if not os.path.exists("unet_trt.ep"):
+    if not os.path.exists("unet_trt.ts"):
         print("not compiled - building")
         # 1. Inspect metadata without loading tensors into RAM
         with safe_open(model_path, framework="pt") as f:
@@ -79,7 +80,6 @@ def load_model(model_path, device):
 
         model = model.half()  # Convert the model to float16 (half precision) for faster inference
         model.eval()
-        #model = torch.compile(model)
     #---------
         import torch_tensorrt
         batch = torch.export.Dim("batch", min=1, max=7) #--- TODO: set to batch size
@@ -106,15 +106,31 @@ def load_model(model_path, device):
                 )
             ],
             enabled_precisions={torch.half},
+            optimization_level=5,
+            workspace_size=8 << 30,   # 8 GB
+            use_python_runtime=False,
         )
     #----------
-        torch_tensorrt.save(trt_model, "unet_trt.ep", inputs=[example_input], dynamic_shapes=dynamic_shapes)
+        torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input], output_format="torchscript")#, dynamic_shapes=dynamic_shapes)
 
 
     else:
         print("loading compiled..")
-        trt_model = torch.export.load("unet_trt.ep").module()
+        
+        import ctypes
+        # 1. Manually open the missing TensorRT dependency into the global symbol table
+        ctypes.CDLL(
+            "/opt/conda/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_plugin.so.11",
+            mode=ctypes.RTLD_GLOBAL,
+        )
 
+        # 2. Now load the torch_tensorrt C++ runtime
+        torch.ops.load_library(
+            "/opt/conda/lib/python3.11/site-packages/torch_tensorrt/lib/libtorchtrt_runtime.so"
+        )
+        
+        trt_model = torch.jit.load("unet_trt.ts")
+        
 
     print("returning model")
     return trt_model
@@ -668,13 +684,12 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     total_objects = 0
     async_results = []
 
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
             
             # --- GPU Inference ---
             batch_imgs = batch_imgs.to(device, memory_format=torch.channels_last, non_blocking=True) #move over as uint8 - faster than 32 and 16
-            batch_imgs = batch_imgs.half()
-            batch_imgs = batch_imgs.div(255.0)
+            batch_imgs = batch_imgs.half().div(255.0)
             
             if stain == "ihc_dab":
                 output_mask, maps = predict_ihc_batch(batch_imgs, model, device)
@@ -687,7 +702,6 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             copy_stream = torch.cuda.Stream()
 
             copy_stream.wait_stream(torch.cuda.current_stream())
-
             with torch.cuda.stream(copy_stream):
                 output_cpu = output_mask.to("cpu", non_blocking=True)
                 maps_cpu = maps.to("cpu", non_blocking=True)
@@ -696,7 +710,6 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
                 # copy_stream, so it won't recycle their memory early.
                 output_mask.record_stream(copy_stream)
                 maps.record_stream(copy_stream)
-
             copy_event = torch.cuda.Event()
             copy_event.record(copy_stream)
 
@@ -744,7 +757,7 @@ def main_wsi(args) -> None:
     outdir = args.outdir
     mask_dir = args.binmask_dir
     mag = args.magnification
-    batch_to_gpu = args.batch_gpu  #TODO: AJ --- this seems like it needs to be smaller in order to hide the massive latency in the first and last batch
+    batch_to_gpu = args.batch_gpu  
     # batch_mem is no longer needed with DataLoader streaming
     region_size = args.tile_size
     n_process = args.n_process
