@@ -482,7 +482,7 @@ def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_
 #    try:
 
     output_batch = output_tensor.numpy()
-    maps_batch = maps_tensor.numpy()
+    maps_batch = maps_tensor.float().numpy()
     coords_batch = coords_tensor.numpy()
 
     total_features = 0
@@ -683,7 +683,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             
             # --- Move to CPU for Post-Processing ---
             output_cpu = output_mask.to("cpu",non_blocking=True)
-            maps_cpu = maps.to("cpu",non_blocking=True).float()
+            maps_cpu = maps.to("cpu",non_blocking=True)
 
             coords_cpu = batch_coords_tensor.clone()
 
@@ -757,10 +757,7 @@ def main_wsi(args) -> None:
     logger.addHandler(c_handler)
     logger.addHandler(f_handler)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-    #torch.backends.cudnn.benchmark=True
-    model = load_model(model_path,device)
-
+    
     if len(slide_dirs) == 1:
         pattern = slide_dirs[0]
 
@@ -775,7 +772,30 @@ def main_wsi(args) -> None:
 
     stats={}
 
-    for slide_dir in slide_dirs:
+    def preload_file_linux(file_path: str):
+        """Signals the Linux page cache to asynchronously preload the file into RAM."""
+        fd = os.open(file_path, os.O_RDONLY)
+        try:
+            # Get total file size
+            file_size = os.fstat(fd).st_size
+            
+            # POSIX_FADV_WILLNEED asks kernel to preload the range [0, file_size]
+            os.posix_fadvise(fd, 0, file_size, os.POSIX_FADV_WILLNEED)
+        finally:
+            os.close(fd)
+        return 0
+
+    preload_file_linux(slide_dirs[0])
+
+
+    device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+    #torch.backends.cudnn.benchmark=True
+    model = load_model(model_path,device)
+
+    for si,slide_dir in enumerate(slide_dirs):
+        if si+1 < len(slide_dirs):
+            preload_file_linux(slide_dirs[si+1]) #while processing this slide, start loading the next one
+
         temp = os.path.basename(slide_dir).rpartition('.')
         sname, sformat = temp[0],temp[-1]
         fpath = os.path.dirname(slide_dir)
