@@ -174,29 +174,38 @@ def save_poly(poly,centroid,object_class = {'name': 'Nuclei', 'colorRGB': -65536
     feature["type"] = "Feature"
     return ujson.dumps(feature)
 
-def writer(features_queue, output_path):
-    """
-    Save detected features to a JSON file.
 
-    This function reads features from the provided queue and saves them to a compressed JSON file.
 
-    Parameters:
-    features_queue (multiprocessing.Queue): Queue containing the extracted features.
-    output_path (str): Path to the output JSON file.
+def writer(features_queue, output_path, batch_size=5000):
     """
-    with gzip.open(output_path, 'wt', encoding="utf-8",compresslevel=1) as file:
-            file.write('[')
-            first = True
-            while True:
-                try:
-                    feature = features_queue.get()
-                except:
-                    continue
-                if feature is None: # end of analysis
-                    break
-                file.write(","*(not first)+'\n'+feature)
+    Saves features as a gzip-compressed valid JSON array file (.json.gz).
+    """
+    first = True
+    batch = []
+    
+    with gzip.open(output_path, 'wt', encoding="utf-8", compresslevel=5) as file:
+        file.write("[\n")
+        
+        while True:
+            feature = features_queue.get()
+            
+            if feature is None:  # Sentinel value indicating end
+                break
+                
+            batch.append(feature)
+            
+            if len(batch) >= batch_size:
+                formatted_chunk = ("," if not first else "") + ",\n".join(batch)
+                file.write(formatted_chunk)
                 first = False
-            file.write('\n]')
+                batch.clear()
+        
+        # Flush remaining buffered features
+        if batch:
+            formatted_chunk = ("," if not first else "") + ",\n".join(batch)
+            file.write(formatted_chunk)
+            
+        file.write("\n]")
 
 # --- Dataset Class ---
 
