@@ -175,36 +175,24 @@ def save_poly(poly,centroid,object_class = {'name': 'Nuclei', 'colorRGB': -65536
     return ujson.dumps(feature)
 
 
-
-def writer(features_queue, output_path, batch_size=5000):
-    """
-    Saves features as a gzip-compressed valid JSON array file (.json.gz).
-    """
+def writer(features_queue, output_path):
     first = True
-    batch = []
     
     with gzip.open(output_path, 'wt', encoding="utf-8", compresslevel=5) as file:
         file.write("[\n")
         
         while True:
-            feature = features_queue.get()
+            # feature_batch is now a list of feature strings from one worker batch
+            feature_batch = features_queue.get()
             
-            if feature is None:  # Sentinel value indicating end
+            if feature_batch is None:  # Sentinel value
                 break
                 
-            batch.append(feature)
-            
-            if len(batch) >= batch_size:
-                formatted_chunk = ("," if not first else "") + ",\n".join(batch)
+            if feature_batch:
+                formatted_chunk = (",\n" if not first else "") + ",\n".join(feature_batch)
                 file.write(formatted_chunk)
                 first = False
-                batch.clear()
-        
-        # Flush remaining buffered features
-        if batch:
-            formatted_chunk = ("," if not first else "") + ",\n".join(batch)
-            file.write(formatted_chunk)
-            
+                
         file.write("\n]")
 
 # --- Dataset Class ---
@@ -510,21 +498,21 @@ def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_
     maps_batch = maps_tensor.float().numpy()
     coords_batch = coords_tensor.numpy()
 
-    total_features = 0
+    batch_features = []
+    
     for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
         dist, marker, opening = pre_watershed(output_mask, maps)
         if marker is None:
             continue
-        
-        # Extract features
+            
         features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
-        
         if features:
-            # Join them into a string and put in queue
-            features_queue.put(",\n".join(features))
-            total_features += len(features)
-    return total_features
-    # finally:
+            batch_features.extend(features)  # Collect all features for the whole batch
+            
+    if batch_features:
+        features_queue.put(batch_features)  # 1 Queue call per batch!
+        
+    return len(batch_features)
     #     mask_shm.close()
     #     mask_shm.unlink()
 
