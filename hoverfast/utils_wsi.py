@@ -63,21 +63,61 @@ def load_model(model_path, device):
     torch.nn.Module: Loaded model ready for inference.
     """
 
-    # 1. Inspect metadata without loading tensors into RAM
-    with safe_open(model_path, framework="pt") as f:
-        metadata = f.metadata()
-        config = json.loads(metadata["config"])
 
-    # 2. Instantiate HoverFast using the extracted parameters
-    model = HoverFast(**config).to(device, memory_format=torch.channels_last)
+    if not os.path.exists("unet_trt.ep"):
+        print("not compiled - building")
+        # 1. Inspect metadata without loading tensors into RAM
+        with safe_open(model_path, framework="pt") as f:
+            metadata = f.metadata()
+            config = json.loads(metadata["config"])
 
-    # 3. Load weights directly into the instantiated model instance
-    safetensors.torch.load_model(model, model_path)
+        # 2. Instantiate HoverFast using the extracted parameters
+        model = HoverFast(**config).to(device, memory_format=torch.channels_last)
 
-    model = model.half()  # Convert the model to float16 (half precision) for faster inference
-    model.eval()
-    #model = torch.compile(model)
-    return model
+        # 3. Load weights directly into the instantiated model instance
+        safetensors.torch.load_model(model, model_path)
+
+        model = model.half()  # Convert the model to float16 (half precision) for faster inference
+        model.eval()
+        #model = torch.compile(model)
+    #---------
+        import torch_tensorrt
+        batch = torch.export.Dim("batch", min=1, max=7) #--- TODO: set to batch size
+
+        example_input = torch.randn(7, 3, 1024, 1024, device="cuda", dtype=torch.float16)
+
+
+        dynamic_shapes = {"x": {0: batch}}
+
+        exp_program = torch.export.export(
+            model,
+            (example_input,),
+            dynamic_shapes=dynamic_shapes,  # match your forward()'s arg name
+        )
+
+        trt_model = torch_tensorrt.dynamo.compile(
+            exp_program,
+            inputs=[
+                torch_tensorrt.Input(
+                    min_shape=(1, 3, 1024, 1024),
+                    opt_shape=(7, 3, 1024, 1024),  # pick whatever's most common
+                    max_shape=(7, 3, 1024, 1024),
+                    dtype=torch.half,
+                )
+            ],
+            enabled_precisions={torch.half},
+        )
+    #----------
+        torch_tensorrt.save(trt_model, "unet_trt.ep", inputs=[example_input], dynamic_shapes=dynamic_shapes)
+
+
+    else:
+        print("loading compiled..")
+        trt_model = torch.export.load("unet_trt.ep").module()
+
+
+    print("returning model")
+    return trt_model
 
 def rgba2rgb(img):
     """
@@ -418,9 +458,7 @@ def region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
     
     return output
 
-def post_processing_batch_task(mask_shm_name, mask_shape, mask_dtype,
-                                maps_shm_name, maps_shape, maps_dtype,
-                                coords_batch, slide_data, features_queue):
+def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, features_queue):
     """
     Worker function for the multiprocessing pool to handle post-processing.
 
@@ -436,32 +474,37 @@ def post_processing_batch_task(mask_shm_name, mask_shape, mask_dtype,
     int: Total number of features extracted in this batch.
     """
 
-    mask_shm = shared_memory.SharedMemory(name=mask_shm_name)
-    output_batch = np.ndarray(mask_shape, dtype=mask_dtype, buffer=mask_shm.buf)
-    maps_shm = shared_memory.SharedMemory(name=maps_shm_name)
-    maps_batch = np.ndarray(maps_shape, dtype=maps_dtype, buffer=maps_shm.buf)
+    # mask_shm = shared_memory.SharedMemory(name=mask_shm_name)
+    # output_batch = np.ndarray(mask_shape, dtype=mask_dtype, buffer=mask_shm.buf)
+    # maps_shm = shared_memory.SharedMemory(name=maps_shm_name)
+    # maps_batch = np.ndarray(maps_shape, dtype=maps_dtype, buffer=maps_shm.buf)
 
-    try:
-        total_features = 0
-        for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
-            dist, marker, opening = pre_watershed(output_mask, maps)
-            if marker is None:
-                continue
-            
-            # Extract features
-            features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
-            
-            if features:
-                # Join them into a string and put in queue
-                features_queue.put(",\n".join(features))
-                total_features += len(features)
-        return total_features
-    finally:
-        mask_shm.close()
-        mask_shm.unlink()
+#    try:
 
-        maps_shm.close()       
-        maps_shm.unlink()
+    output_batch = output_tensor.numpy()
+    maps_batch = maps_tensor.numpy()
+    coords_batch = coords_tensor.numpy()
+
+    total_features = 0
+    for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
+        dist, marker, opening = pre_watershed(output_mask, maps)
+        if marker is None:
+            continue
+        
+        # Extract features
+        features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
+        
+        if features:
+            # Join them into a string and put in queue
+            features_queue.put(",\n".join(features))
+            total_features += len(features)
+    return total_features
+    # finally:
+    #     mask_shm.close()
+    #     mask_shm.unlink()
+
+    #     maps_shm.close()       
+    #     maps_shm.unlink()
 
     
 
@@ -639,48 +682,20 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
                 output_mask, maps = predict_batch(batch_imgs, model)
             
             # --- Move to CPU for Post-Processing ---
-            output_cpu = output_mask.to("cpu",non_blocking=True).numpy()
-            maps_cpu = maps.to("cpu",non_blocking=True).float().numpy()
+            output_cpu = output_mask.to("cpu",non_blocking=True)
+            maps_cpu = maps.to("cpu",non_blocking=True).float()
 
+            coords_cpu = batch_coords_tensor.clone()
 
+            torch.cuda.current_stream().synchronize()
 
+            output_cpu.share_memory_()
+            maps_cpu.share_memory_()
 
-            coords_cpu = batch_coords_tensor.numpy()
-            
-            # Prepare batch data for the pool
-            
-            torch.cuda.synchronize()
-            # batch_data = []
-            # for i in range(len(output_cpu)):
-            #     batch_data.append((output_cpu[i], maps_cpu[i], coords_cpu[i]))
-            
-            # # --- Async Post-Processing ---
-            # res = post_proc_pool.apply_async(
-            #     post_processing_batch_task, 
-            #     args=(batch_data, slide_data, features_queue)
-            # )
-
-            
-
-
-
-            shm_mask, mask_shape, mask_dtype = to_shared(output_cpu)
-            shm_maps, maps_shape, maps_dtype = to_shared(maps_cpu)
-            
-
-            # 1. Unregister from main's resource tracker so Python stops trying to track/delete it
-            unregister(shm_mask._name, "shared_memory")
-            unregister(shm_maps._name, "shared_memory")
-
-            # 2. Close main's local handle right away since main won't read it anymore
-            shm_mask.close()
-            shm_maps.close()
 
             res = post_proc_pool.apply_async(
                 post_processing_batch_task,
-                args=(shm_mask.name, mask_shape, mask_dtype,
-                    shm_maps.name, maps_shape, maps_dtype,
-                    coords_cpu, slide_data, features_queue)
+                args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
             )
 
             async_results.append(res)
@@ -709,11 +724,12 @@ def main_wsi(args) -> None:
     Parameters:
     args (argparse.Namespace): Command-line arguments.
     """
+    print(args)
     slide_dirs = args.slide_folder
     outdir = args.outdir
     mask_dir = args.binmask_dir
     mag = args.magnification
-    batch_to_gpu = args.batch_gpu
+    batch_to_gpu = args.batch_gpu  #TODO: AJ --- this seems like it needs to be smaller in order to hide the massive latency in the first and last batch
     # batch_mem is no longer needed with DataLoader streaming
     region_size = args.tile_size
     n_process = args.n_process
@@ -742,7 +758,7 @@ def main_wsi(args) -> None:
     logger.addHandler(f_handler)
 
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-    torch.backends.cudnn.benchmark=True
+    #torch.backends.cudnn.benchmark=True
     model = load_model(model_path,device)
 
     if len(slide_dirs) == 1:
