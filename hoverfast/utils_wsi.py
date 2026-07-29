@@ -184,7 +184,7 @@ def writer(features_queue, output_path):
     features_queue (multiprocessing.Queue): Queue containing the extracted features.
     output_path (str): Path to the output JSON file.
     """
-    with gzip.open(output_path, 'wt', encoding="utf-8") as file:
+    with gzip.open(output_path, 'wt', encoding="utf-8",compresslevel=1) as file:
             file.write('[')
             first = True
             while True:
@@ -684,6 +684,7 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     total_objects = 0
     async_results = []
 
+
     with torch.inference_mode():
         for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
             
@@ -695,7 +696,8 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
                 output_mask, maps = predict_ihc_batch(batch_imgs, model, device)
             else:
                 output_mask, maps = predict_batch(batch_imgs, model)
-            
+
+
             # --- Move to CPU for Post-Processing ---
             #---this works and is a more sophistocated than the regular sync - and seems to give almost no added value
             # consider reverting to a previous version in this pull request after benchmarking on the sever
