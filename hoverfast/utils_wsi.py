@@ -682,16 +682,31 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
                 output_mask, maps = predict_batch(batch_imgs, model)
             
             # --- Move to CPU for Post-Processing ---
-            output_cpu = output_mask.to("cpu",non_blocking=True)
-            maps_cpu = maps.to("cpu",non_blocking=True)
+            #---this works and is a more sophistocated than the regular sync - and seems to give almost no added value
+            # consider reverting to a previous version in this pull request after benchmarking on the sever
+            copy_stream = torch.cuda.Stream()
+
+            copy_stream.wait_stream(torch.cuda.current_stream())
+
+            with torch.cuda.stream(copy_stream):
+                output_cpu = output_mask.to("cpu", non_blocking=True)
+                maps_cpu = maps.to("cpu", non_blocking=True)
+
+                # Tell the allocator these source tensors are still in use by
+                # copy_stream, so it won't recycle their memory early.
+                output_mask.record_stream(copy_stream)
+                maps.record_stream(copy_stream)
+
+            copy_event = torch.cuda.Event()
+            copy_event.record(copy_stream)
 
             coords_cpu = batch_coords_tensor.clone()
 
-            torch.cuda.current_stream().synchronize()
+            copy_event.synchronize()
 
             output_cpu.share_memory_()
             maps_cpu.share_memory_()
-
+            #-----  sync block completed
 
             res = post_proc_pool.apply_async(
                 post_processing_batch_task,
