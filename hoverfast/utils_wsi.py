@@ -32,7 +32,7 @@ from .hoverfast import HoverFast
 from .utils_stain_deconv import *
 
 from .spatialite_utils import get_spatialite_connection, init_spatialite_db_deferred_index, build_spatial_indexes, point_to_wkb, poly_to_wkb, bulk_insert_nuclei_wkb
-
+from .calibrate_model import calibrate_model
 
 # --- Helper Functions ---
 
@@ -61,76 +61,25 @@ def load_model(model_path, device):
     torch.nn.Module: Loaded model ready for inference.
     """
 
+    #--- code below will create an int8 model in conjunction with calibrate_model
+    #ONCE it is made and saved, comment this out and uncomment the single model load statement below
+    with safe_open(model_path, framework="pt") as f:
+        metadata = f.metadata()
+        config = json.loads(metadata["config"])
 
-    if not os.path.exists("unet_trt.ts"):
-        print("not compiled - building")
-        # 1. Inspect metadata without loading tensors into RAM
-        with safe_open(model_path, framework="pt") as f:
-            metadata = f.metadata()
-            config = json.loads(metadata["config"])
+    # 2. Instantiate HoverFast using the extracted parameters
+    model = HoverFast(**config).to(device, memory_format=torch.channels_last)
 
-        # 2. Instantiate HoverFast using the extracted parameters
-        model = HoverFast(**config).to(device, memory_format=torch.channels_last)
+    # 3. Load weights directly into the instantiated model instance
+    safetensors.torch.load_model(model, model_path)
 
-        # 3. Load weights directly into the instantiated model instance
-        safetensors.torch.load_model(model, model_path)
+    model = model.half()  # Convert the model to float16 (half precision) for faster inference
+    model.eval()
 
-        model = model.half()  # Convert the model to float16 (half precision) for faster inference
-        model.eval()
-    #---------
-        import torch_tensorrt
-        batch = torch.export.Dim("batch", min=1, max=7) #--- TODO: set to batch size
+    #---- if the int8 model has been generated - load it
+    # model = torch.jit.load("unet_trt_int8.ts")
 
-        example_input = torch.randn(7, 3, 1024, 1024, device="cuda", dtype=torch.float16)
-
-
-        dynamic_shapes = {"x": {0: batch}}
-
-        exp_program = torch.export.export(
-            model,
-            (example_input,),
-            dynamic_shapes=dynamic_shapes,  # match your forward()'s arg name
-        )
-
-        trt_model = torch_tensorrt.dynamo.compile(
-            exp_program,
-            inputs=[
-                torch_tensorrt.Input(
-                    min_shape=(1, 3, 1024, 1024),
-                    opt_shape=(7, 3, 1024, 1024),  # pick whatever's most common
-                    max_shape=(7, 3, 1024, 1024),
-                    dtype=torch.half,
-                )
-            ],
-            enabled_precisions={torch.half},
-            optimization_level=5,
-            workspace_size=8 << 30,   # 8 GB
-            use_python_runtime=False,
-        )
-    #----------
-        torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input], output_format="torchscript")#, dynamic_shapes=dynamic_shapes)
-
-
-    else:
-        print("loading compiled..")
-        
-        import ctypes
-        # 1. Manually open the missing TensorRT dependency into the global symbol table
-        ctypes.CDLL(
-            "/opt/conda/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_plugin.so.11",
-            mode=ctypes.RTLD_GLOBAL,
-        )
-
-        # 2. Now load the torch_tensorrt C++ runtime
-        torch.ops.load_library(
-            "/opt/conda/lib/python3.11/site-packages/torch_tensorrt/lib/libtorchtrt_runtime.so"
-        )
-        
-        trt_model = torch.jit.load("unet_trt.ts")
-        
-
-    print("returning model")
-    return trt_model
+    return model
 
 def rgba2rgb(img):
     """
@@ -664,6 +613,25 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     Returns:
     tuple: Total number of regions processed and total number of nuclei detected.
     """
+
+    calibrate_model(
+    sname,
+    sformat,
+    fpath,
+    mask_dir,
+    outdir,
+    mag,
+    batch_to_gpu,
+    region_size,
+    model,
+    device,
+    n_process,
+    poly_simplify_tolerance,
+    threshold,
+    stain,
+    logger,
+    db_output_fname,
+    precision="int8")
     
     n_post_proc = max(1, n_process // 2)   
     n_loader = max(1, n_process - n_post_proc)
