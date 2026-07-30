@@ -8,3 +8,4 @@ benchmark_and_convert_pth_safetensor.py
 ajtest/**
 build/**
 local_dev_docs/**
+**/**.sqlite
