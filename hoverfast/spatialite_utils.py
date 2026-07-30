@@ -1,5 +1,7 @@
-import struct
+#!/usr/bin/env python3
 import sqlite3
+import struct
+
 
 def get_spatialite_connection(db_path):
     """

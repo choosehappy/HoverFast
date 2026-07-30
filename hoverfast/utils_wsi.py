@@ -1,6 +1,4 @@
-from multiprocessing import shared_memory
-from multiprocessing.resource_tracker import unregister
-
+#!/usr/bin/env python3
 
 import datetime
 import glob
@@ -29,10 +27,14 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from .hoverfast import HoverFast
+from .spatialite_utils import (
+    bulk_insert_nuclei_wkb,
+    get_spatialite_connection,
+    init_spatialite_db_deferred_index,
+    point_to_wkb,
+    poly_to_wkb,
+)
 from .utils_stain_deconv import *
-
-from .spatialite_utils import get_spatialite_connection, init_spatialite_db_deferred_index, build_spatial_indexes, point_to_wkb, poly_to_wkb, bulk_insert_nuclei_wkb
-
 
 # --- Helper Functions ---
 
@@ -147,7 +149,7 @@ def rgba2rgb(img):
     thumb.paste(img, None, img)
     return thumb
 
-def save_poly(poly,centroid,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
+def save_poly(poly, centroid, object_class=None):
     """
     Serialize a polygon representing a detected object.
 
@@ -162,6 +164,8 @@ def save_poly(poly,centroid,object_class = {'name': 'Nuclei', 'colorRGB': -65536
     Returns:
     str: Serialized polygon in GeoJSON format.
     """
+    if object_class is None:
+        object_class = {'name': 'Nuclei', 'colorRGB': -65536}
     feature = {}
     feature["geometry"] = {'type':'Polygon','coordinates':(tuple(map(tuple,poly.squeeze()))+(tuple(poly[0].squeeze()),),)}
     feature["geometry"]["centroid"] = [ int(coord) for coord in centroid]
@@ -381,7 +385,7 @@ def pre_watershed(output_mask, maps):
 
     return dist, marker, opening
 
-def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_data, db_output_fname=None, object_class={'name': 'Nuclei', 'colorRGB': -65536}):
+def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_data, db_output_fname=None, object_class=None):
     """
     Perform watershed segmentation on detected objects.
 
@@ -400,6 +404,8 @@ def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_d
     Returns:
     list: A list of serialized polygons representing detected nuclei.
     """
+    if object_class is None:
+        object_class = {'name': 'Nuclei', 'colorRGB': -65536}
     output = []
     vals = np.unique(submarker)
     vals = vals[np.nonzero(vals)]
@@ -802,8 +808,8 @@ def main_wsi(args) -> None:
 
     os.makedirs(outdir, exist_ok=True)
 
-    logger = logging.getLogger(f"{outdir}/HoverFast_log_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M"))
-    f_handler = logging.FileHandler(f"{outdir}/HoverFast_log_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M")+".log")
+    logger = logging.getLogger(f"{outdir}/HoverFast_log_"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M"))
+    f_handler = logging.FileHandler(f"{outdir}/HoverFast_log_"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M")+".log")
     c_handler = logging.StreamHandler()
     c_handler.setLevel(logging.WARNING)
     f_handler.setLevel(logging.ERROR)
@@ -870,7 +876,7 @@ def main_wsi(args) -> None:
             stats[sname].append(n_objects)
             stats[sname].append(time.time()-start)
             print(f"running time: {stats[sname][-1]:.2f}s, #patches {stats[sname][0]} and #objects {stats[sname][1]}")
-        except Exception as e:
-            logger.error(f"File {sname} failed: {e}", exc_info=True)
+        except Exception:
+            logger.exception("File %s failed", sname)
             print(f"Error processing {sname}: {e}")
 

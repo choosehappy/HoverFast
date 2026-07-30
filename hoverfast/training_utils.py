@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import datetime
 import math
 import os
@@ -95,7 +96,7 @@ def asMinutes(s):
     """
     m = math.floor(s / 60)
     s -= m * 60
-    return '%dm %ds' % (m, s)
+    return f'{m}m {s}s'
 
 def timeSince(since, percent):
     """
@@ -112,7 +113,7 @@ def timeSince(since, percent):
     s = now - since
     es = s / (percent+.00001)
     rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
+    return f'{asMinutes(s)} (- {asMinutes(rs)})'
 
 def make_maps(label):
     """
@@ -310,7 +311,7 @@ def main_train(args) -> None:
     criterion = Criterion(class_weight,edge_weight,grad_weight,hv_weight,dice_weight,crossentropy_weight)
     bcm = BinaryConfusionMatrix().to(device)
 
-    writer=SummaryWriter(os.path.join(outdir,f"hoverfast_{dataname}_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M"))) # Open the tensorboard visualiser
+    writer=SummaryWriter(os.path.join(outdir,f"hoverfast_{dataname}_"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M"))) # Open the tensorboard visualiser
 
     best_loss_on_test = np.Infinity
     edge_weight=torch.tensor(edge_weight).to(device)
@@ -384,8 +385,7 @@ def main_train(args) -> None:
                 train_loss = stats['loss']['total_loss']
             current_loss = stats['loss']['total_loss']
 
-        print('%s ([%d/%d] %d%%), train loss: %.4f test loss: %.4f' % (timeSince(start_time, (epoch+1) / num_epochs), 
-                                                    epoch+1, num_epochs ,(epoch+1) / num_epochs * 100, train_loss, current_loss),end="")    
+        print(f'{timeSince(start_time, (epoch+1) / num_epochs)} ([{epoch+1}/{num_epochs}] {(epoch+1) / num_epochs * 100:.0f}%), train loss: {train_loss:.4f} test loss: {current_loss:.4f}', end="")    
 
 
         if current_loss < best_loss_on_test:

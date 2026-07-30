@@ -1,12 +1,14 @@
+#!/usr/bin/env python3
 import datetime
 import glob
 import gzip
 import logging
 import math
 import multiprocessing
+import operator
 import os
 import time
-from functools import partial
+from functools import partial, reduce
 
 import cv2
 import numpy as np
@@ -86,7 +88,7 @@ def multiproc_roi(function,arg_list,n_process,output=True):
     pool.join()
     if not output:
         return
-    return sum(out,[]) if isinstance(out[0],list) else out
+    return reduce(operator.iadd, out, []) if isinstance(out[0],list) else out
 
 def predict_roi_ihc(regions, model, device):
     """
@@ -301,7 +303,7 @@ def processing_roi(regions,names,model,device,batch_to_gpu, stain):
 
         arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
     torch.cuda.empty_cache()
-    return list(map(tuple.__add__, arg_list1, map(lambda x:(x,) ,names)))
+    return list(map(tuple.__add__, arg_list1, ((x,) for x in names)))
 
 def post_processing_roi(data,outdir,threshold,poly_simplify_tolerance,color,width):
     """
@@ -323,7 +325,7 @@ def post_processing_roi(data,outdir,threshold,poly_simplify_tolerance,color,widt
         dist, marker, opening = pre_watershed(binmask,maps)
         region_feature_roi(region,binmask,dist, marker, opening,poly_simplify_tolerance, threshold,color,width,outdir,sname)
 
-def save_poly_dict(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
+def save_poly_dict(poly,object_class = None):
     """
     Serialize a polygon representing a detected object as a dictionary.
 
@@ -334,6 +336,8 @@ def save_poly_dict(poly,object_class = {'name': 'Nuclei', 'colorRGB': -65536}):
     object_class (dict, optional): Classification information for the object. Default is {'name': 'Nuclei', 'colorRGB': -65536}.
     """
 
+    if object_class is None:
+        object_class = {'name': 'Nuclei', 'colorRGB': -65536}
     feature = {}
     feature["geometry"] = {'type':'Polygon','coordinates':(tuple(map(tuple,poly.squeeze()))+(tuple(poly[0].squeeze()),),)}
     feature["properties"] = {'object_type': 'cell',
@@ -401,9 +405,9 @@ def main_roi(args) -> None:
     os.mkdir(os.path.join(outdir,'json')) if not os.path.exists(os.path.join(outdir,'json')) else None
 
     #config logger
-    logger = logging.getLogger(f"{outdir}/HoverFast_log_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M"))
+    logger = logging.getLogger(f"{outdir}/HoverFast_log_"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M"))
 
-    f_handler = logging.FileHandler(f"{outdir}/HoverFast_log_"+datetime.datetime.now().strftime("%Y-%m-%d_%Hh%M")+".log")
+    f_handler = logging.FileHandler(f"{outdir}/HoverFast_log_"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M")+".log")
     c_handler = logging.StreamHandler()
 
     c_handler.setLevel(logging.WARNING)
@@ -438,7 +442,7 @@ def main_roi(args) -> None:
     for spaths in tqdm(divide_batch(slide_dirs,batch_mem),desc="outer",leave=False,total=math.ceil(len(slide_dirs)/batch_mem)):
         try:
             infer_roi(spaths,n_process,outdir,threshold,poly_simplify_tolerance,color,model,device,batch_to_gpu,width, stain)
-        except Exception as e:
-            logger.error(f"Batch {slide_dirs} failed: {e}", exc_info=True)
+        except Exception:
+            logger.exception(f"Batch {slide_dirs} failed")
     end = time.time()-start
     print(f"running time: {end}, #patches {len(slide_dirs)}")

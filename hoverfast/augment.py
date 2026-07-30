@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import numbers
 
 import numpy as np
@@ -30,7 +31,7 @@ class HEDJitterAugmentation(ImageOnlyTransform):
             else:
                 raise ValueError("Alpha range must be in the form (min, max).")
         else:
-            raise ValueError("Alpha must be a number or a tuple.")
+            raise TypeError("Alpha must be a number or a tuple.")
         
         if isinstance(beta,numbers.Number):
             self.beta = (-beta,beta)
@@ -40,7 +41,7 @@ class HEDJitterAugmentation(ImageOnlyTransform):
             else:
                 raise ValueError("Beta range must be in the form (min, max).")
         else:
-            raise ValueError("Beta must be a number or a tuple.")
+            raise TypeError("Beta must be a number or a tuple.")
         
         self.cap = np.array([1.87798274, 1.13473037, 1.57358807])
 
