@@ -79,6 +79,16 @@ def load_model(model_path, device):
     #---- if the int8 model has been generated - load it
     # model = torch.jit.load("unet_trt_int8.ts")
 
+    # ---- this code is for debugging - prints out some interesting information about the model
+    # engine = model._run_on_acc_0.engine
+    
+    # engine.get_engine_layer_info()
+    
+    # engine.enable_profiling()
+    # engine.dump_engine_layer_info_to_file("layers.txt")
+
+
+    
     return model
 
 def rgba2rgb(img):
