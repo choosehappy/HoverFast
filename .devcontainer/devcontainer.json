@@ -12,7 +12,7 @@
 	"runArgs": [
         "--gpus",
         "all",
-		"--shm-size=8g",
+		"--shm-size=16g",
 		"--cap-add=SYS_PTRACE" // needed for py-spy
     ]
 

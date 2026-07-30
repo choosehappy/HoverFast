@@ -31,13 +31,10 @@ from tqdm import tqdm
 from .hoverfast import HoverFast
 from .utils_stain_deconv import *
 
-# --- Helper Functions ---
+from .spatialite_utils import get_spatialite_connection, init_spatialite_db_deferred_index, build_spatial_indexes, point_to_wkb, poly_to_wkb, bulk_insert_nuclei_wkb
 
-def to_shared(arr):
-    shm = shared_memory.SharedMemory(create=True, size=arr.nbytes)
-    shared_arr = np.ndarray(arr.shape, dtype=arr.dtype, buffer=shm.buf)
-    shared_arr[:] = arr[:]
-    return shm, arr.shape, arr.dtype
+
+# --- Helper Functions ---
 
 
 def magnification_from_mpp(mpp): 
@@ -172,7 +169,7 @@ def save_poly(poly,centroid,object_class = {'name': 'Nuclei', 'colorRGB': -65536
                                 'classification': object_class,
                                 'isLocked': False}
     feature["type"] = "Feature"
-    return ujson.dumps(feature)
+    return feature
 
 
 def writer(features_queue, output_path):
@@ -384,7 +381,7 @@ def pre_watershed(output_mask, maps):
 
     return dist, marker, opening
 
-def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_data):
+def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_data, db_output_fname=None, object_class={'name': 'Nuclei', 'colorRGB': -65536}):
     """
     Perform watershed segmentation on detected objects.
 
@@ -439,10 +436,31 @@ def watershed_object(rg, dist, submarker, opening, offset, region_coord, slide_d
         
         if np.any(np.abs(np.array([cx,cy])-slide_data['region_size']//2)>slide_data['region_size']//2-slide_data['stride']//2):
             continue
-        output.append(save_poly((c*slide_data['downfactor'])+region_coord,slide_data['downfactor']*np.array([cx,cy])+region_coord))
+
+
+        coords = (c * slide_data['downfactor']) + region_coord
+        centroid = slide_data['downfactor'] * np.array([cx, cy]) + region_coord
+
+        if  db_output_fname:
+            # Build directly as a DB-ready row: (geom_wkb, centroid_wkb, object_type,
+            # classification_name, classification_color, is_locked)
+            output.append((
+                'cell',
+                object_class['name'],
+                object_class['colorRGB'],
+                False,
+                poly_to_wkb(coords),
+                point_to_wkb(centroid),
+            ))
+
+        else:
+            poly_feat = save_poly(coords, centroid, object_class)
+            output.append(ujson.dumps(poly_feat))
+
+            
     return output
 
-def region_feature(output_mask, region_coord, dist, marker, opening, slide_data):
+def region_feature(output_mask, region_coord, dist, marker, opening, slide_data,db_output_fname):
     """
     Extract features from each detected region.
 
@@ -467,11 +485,11 @@ def region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
         if rg.area < slide_data['threshold']/slide_data['downfactor']**2:
             continue
         ymin,xmin,ymax,xmax = rg.bbox
-        output += watershed_object(rg,dist[ymin:ymax,xmin:xmax],marker[ymin:ymax,xmin:xmax]*rg.image,opening[ymin:ymax,xmin:xmax],(xmin,ymin),region_coord,slide_data)
+        output += watershed_object(rg,dist[ymin:ymax,xmin:xmax],marker[ymin:ymax,xmin:xmax]*rg.image,opening[ymin:ymax,xmin:xmax],(xmin,ymin),region_coord,slide_data,db_output_fname)
     
     return output
 
-def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, features_queue):
+def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, features_queue , db_output_fname=None):
     """
     Worker function for the multiprocessing pool to handle post-processing.
 
@@ -505,21 +523,21 @@ def post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_
         if marker is None:
             continue
             
-        features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data)
+        features = region_feature(output_mask, region_coord, dist, marker, opening, slide_data, db_output_fname)
         if features:
             batch_features.extend(features)  # Collect all features for the whole batch
-            
-    if batch_features:
-        features_queue.put(batch_features)  # 1 Queue call per batch!
-        
-    return len(batch_features)
-    #     mask_shm.close()
-    #     mask_shm.unlink()
-
-    #     maps_shm.close()       
-    #     maps_shm.unlink()
 
     
+
+    if batch_features:
+        if db_output_fname:
+            conn = get_spatialite_connection(db_output_fname)
+            bulk_insert_nuclei_wkb(conn, batch_features, srid=0, batch_size=50_000)
+        else:
+            features_queue.put(batch_features)  # 1 Queue call per batch!
+        
+    return len(batch_features)
+
 
 # --- Main Pipeline Logic ---
 
@@ -619,7 +637,7 @@ def get_slide(sname,sformat,fpath,mag,kernel_size,region_size,threshold,outdir,p
 
     return slide_data
 
-def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain,logger):
+def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain,logger,db_output_fname):
     """
     Perform nuclei detection on a whole slide image (WSI) using streaming DataLoader.
 
@@ -671,9 +689,13 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
     )
 
     # 2. Setup Output Queue and Writer
-    features_queue = multiprocessing.Manager().Queue()
-    writer_process = multiprocessing.Process(target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz")))
-    writer_process.start()
+    if db_output_fname:
+        conn = get_spatialite_connection(db_output_fname)
+        init_spatialite_db_deferred_index(conn, srid=0)
+    else: 
+        features_queue = multiprocessing.Manager().Queue()
+        writer_process = multiprocessing.Process(target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz")))
+        writer_process.start()
 
     # 3. Setup Post-Processing Pool
     post_proc_pool = multiprocessing.Pool(processes=n_post_proc)
@@ -720,10 +742,10 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
             maps_cpu.share_memory_()
             #-----  sync block completed
 
-            res = post_proc_pool.apply_async(
-                post_processing_batch_task,
-                args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
-            )
+            if db_output_fname:
+                res = post_proc_pool.apply_async(post_processing_batch_task,args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname))
+            else:
+                res = post_proc_pool.apply_async(post_processing_batch_task,args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue))
 
             async_results.append(res)
 
@@ -736,8 +758,14 @@ def infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,m
         total_objects += res.get()
 
     # Finish writing
-    features_queue.put(None)
-    writer_process.join()
+
+    if db_output_fname:
+        pass
+        #conn = get_spatialite_connection(db_output_fname) 
+        #build_spatial_indexes(conn) #start building the spatial indexes
+    else:
+        features_queue.put(None)
+        writer_process.join()
 
     return len(coords), total_objects
 
@@ -764,6 +792,8 @@ def main_wsi(args) -> None:
     poly_simplify_tolerance = args.poly_simplify
     threshold = args.size_threshold
     stain = args.stain
+
+    db_output = args.db_output
 
     multiprocessing.set_start_method('fork', force=True)
     
@@ -828,11 +858,14 @@ def main_wsi(args) -> None:
         fpath = os.path.dirname(slide_dir)
         print(f"- Working on {sname}")
         stats[sname]=[]
-        
+        if db_output:
+            db_output_fname=outdir+f"/{sname}.sqlite"  #TODO: use path object
+        else:
+            db_output_fname=None
         try:
             start=time.time()
             # Note: batch_mem argument removed from call
-            n_patches, n_objects = infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain, logger)
+            n_patches, n_objects = infer_wsi(sname,sformat,fpath,mask_dir,outdir,mag,batch_to_gpu,region_size,model,device,n_process,poly_simplify_tolerance,threshold,stain, logger,db_output_fname)
             stats[sname].append(n_patches)
             stats[sname].append(n_objects)
             stats[sname].append(time.time()-start)

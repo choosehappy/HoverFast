@@ -30,6 +30,9 @@ def get_args():
                         help="outputdir, default ./output/",
                         default="./output/",
                         type=str)
+    infer_wsi_parser.add_argument('-d', '--db_output',
+                        help="if set True - writes a spatialite DB instead of json, default False",
+                        action='store_true')
     infer_wsi_parser.add_argument('-b', '--binmask_dir',
                         help="quality control mask directory",
                         default=None,

@@ -10,7 +10,7 @@ RUN apt update && \
     apt install -y software-properties-common wget bzip2 git ninja-build \
     vim nano libjpeg-dev libcairo2-dev libgdk-pixbuf2.0-dev libglib2.0-dev \
     libxml2-dev sqlite3 libopenjp2-7-dev libtiff-dev libsqlite3-dev libhdf5-dev libgl1-mesa-glx \
-    build-essential && \
+    spatialite-bin libsqlite3-mod-spatialite build-essential && \
     apt clean
 
 # Install latest openslide version
