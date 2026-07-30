@@ -35,6 +35,7 @@ RUN conda install -c anaconda python=3.11.5
 
 # Install conda packages
 RUN conda install -c anaconda hdf5
+RUN conda install -c conda-forge libstdcxx-ng
 
 # This line removes local apt repo and makes container more compact
 RUN rm -rf /var/lib/apt/lists/*
