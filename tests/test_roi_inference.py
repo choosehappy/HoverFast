@@ -9,7 +9,7 @@ ABS_PATH_MODEL = os.path.abspath(MODEL_PATH)
 TILE_PATH = 'tests/data/'
 ABS_TILE_PATH = os.path.abspath(TILE_PATH)
 
-def _filenames_in(pth): return set(x.name for x in pth.glob('*'))
+def _filenames_in(pth): return {x.name for x in pth.glob('*')}
 
 @pytest.fixture(scope='module')
 def single_roi_dir(tmp_path_factory):

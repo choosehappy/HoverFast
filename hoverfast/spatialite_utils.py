@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import sqlite3
 import struct
+from typing import Any
+
+import numpy as np
 
 
-def get_spatialite_connection(db_path):
+def get_spatialite_connection(db_path: str) -> sqlite3.Connection:
     """
     Open a connection to a (Spatia)Lite DB with mod_spatialite loaded.
     """
@@ -14,7 +19,8 @@ def get_spatialite_connection(db_path):
     conn.enable_load_extension(False)
     return conn
 
-def poly_to_wkb(poly):
+
+def poly_to_wkb(poly: np.ndarray) -> bytes:
     """
     Build a WKB POLYGON blob directly (little-endian, no SRID prefix --
     we pass SRID separately to GeomFromWKB).
@@ -32,13 +38,13 @@ def poly_to_wkb(poly):
     return header + ring_header + ring_body
 
 
-def point_to_wkb(centroid):
+def point_to_wkb(centroid: tuple[float, float]) -> bytes:
     x, y = float(centroid[0]), float(centroid[1])
     # byte order, geom type (1 = point)
     return struct.pack("<BI", 1, 1) + struct.pack("<dd", x, y)
 
 
-def init_spatialite_db_deferred_index(conn, srid=0):
+def init_spatialite_db_deferred_index(conn: sqlite3.Connection, srid: int = 0) -> None:
     cur = conn.cursor()
 
     cur.execute("SELECT count(*) FROM sqlite_master WHERE name='spatial_ref_sys'")
@@ -60,35 +66,44 @@ def init_spatialite_db_deferred_index(conn, srid=0):
     # NOTE: no CreateSpatialIndex() call here -- do that after loading
 
 
-def build_spatial_indexes(conn):
+def build_spatial_indexes(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     cur.execute("SELECT CreateSpatialIndex('nuclei', 'geom')")
     cur.execute("SELECT CreateSpatialIndex('nuclei', 'centroid')")
     conn.commit()
 
 
-def configure_for_bulk_load(conn):
+def configure_for_bulk_load(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode = WAL")       # or OFF for max speed, less safe
-    cur.execute("PRAGMA synchronous = OFF")        # skip fsync on every commit
-    cur.execute("PRAGMA cache_size = -200000")     # ~200MB page cache (negative = KB)
+    cur.execute("PRAGMA journal_mode = WAL")  # or OFF for max speed, less safe
+    cur.execute("PRAGMA synchronous = OFF")  # skip fsync on every commit
+    cur.execute("PRAGMA cache_size = -200000")  # ~200MB page cache (negative = KB)
     cur.execute("PRAGMA temp_store = MEMORY")
     cur.execute("PRAGMA mmap_size = 30000000000")  # optional, if you have RAM/64-bit
     conn.commit()
 
 
-def build_row_wkb(poly, centroid, object_class):
+def build_row_wkb(
+    poly: np.ndarray,
+    centroid: tuple[float, float],
+    object_class: dict[str, Any],
+) -> tuple[str, str, int, bool, bytes, bytes]:
     return (
         "cell",
         object_class["name"],
         object_class["colorRGB"],
         False,
-        poly_to_wkb(poly),      # bytes -> bound as BLOB
-        point_to_wkb(centroid), # bytes -> bound as BLOB
+        poly_to_wkb(poly),  # bytes -> bound as BLOB
+        point_to_wkb(centroid),  # bytes -> bound as BLOB
     )
 
 
-def bulk_insert_nuclei_wkb(conn, records, srid=0, batch_size=50_000):
+def bulk_insert_nuclei_wkb(
+    conn: sqlite3.Connection,
+    records: list[tuple[str, str, int, bool, bytes, bytes]],
+    srid: int = 0,
+    batch_size: int = 50_000,
+) -> None:
     insert_sql = f"""
         INSERT INTO nuclei
             (object_type, classification_name, classification_color,
@@ -105,8 +120,11 @@ def bulk_insert_nuclei_wkb(conn, records, srid=0, batch_size=50_000):
     conn.commit()
 
 
-
-def load_millions(db_path, records, srid=0):
+def load_millions(
+    db_path: str,
+    records: list[tuple[str, str, int, bool, bytes, bytes]],
+    srid: int = 0,
+) -> None:
     conn = get_spatialite_connection(db_path)
     init_spatialite_db_deferred_index(conn, srid=srid)
     configure_for_bulk_load(conn)

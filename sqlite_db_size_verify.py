@@ -8,8 +8,8 @@ Compares:
   - average bytes per row for geometry columns
 """
 
-import sqlite3
 import os
+import sqlite3
 
 DB_PATH = "hoverfast_outputwsi.sqlite"
 

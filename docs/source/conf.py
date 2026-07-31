@@ -36,7 +36,7 @@ html_static_path = ['_static']
 # Options for the Furo theme
 html_theme_options = {
     "light_logo": "images/hoverfast_logo.png",
-    "dark_logo": "images/hoverfast_logo.png", 
+    "dark_logo": "images/hoverfast_logo.png",
 }
 
 # Add custom JavaScript to set dark mode as default

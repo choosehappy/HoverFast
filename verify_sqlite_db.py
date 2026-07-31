@@ -6,8 +6,8 @@ columns back to GeoJSON/coords, and prints them in a readable form so you
 can eyeball that the WKB was written correctly.
 """
 
-import sqlite3
 import json
+import sqlite3
 
 DB_PATH = "hoverfast_outputwsi.sqlite"
 N_SAMPLES = 10
@@ -36,7 +36,7 @@ def main():
 
     # random sample -- ORDER BY RANDOM() is fine for a quick check on
     # sample sizes like 10; avoid it on huge tables for repeated/heavy use
-    cur.execute(f"""
+    cur.execute("""
         SELECT
             id,
             object_type,

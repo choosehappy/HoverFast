@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import json
 import os
+from typing import Any
 
 import numpy as np
 import openslide
@@ -13,7 +16,7 @@ from torch.utils.data import Dataset
 from .hoverfast import HoverFast
 
 
-def load_model(model_path, device):
+def load_model(model_path: str, device: torch.device) -> Any:
     """Load the pre-trained model from the given path."""
     if not os.path.exists("unet_trt.ts"):
         print("not compiled - building")
@@ -21,12 +24,13 @@ def load_model(model_path, device):
             metadata = f.metadata()
             config = json.loads(metadata["config"])
 
-        model = HoverFast(**config).to(device, memory_format=torch.channels_last)
+        model = HoverFast(**config).to(device, memory_format=torch.channels_last)  # type: ignore[call-overload]
         safetensors.torch.load_model(model, model_path)
         model = model.half()
         model.eval()
 
         import torch_tensorrt
+
         batch = torch.export.Dim("batch", min=1, max=7)
 
         example_input = torch.randn(7, 3, 1024, 1024, device="cuda", dtype=torch.float16)
@@ -54,19 +58,17 @@ def load_model(model_path, device):
             use_python_runtime=False,
         )
 
-        torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input],
-                           output_format="torchscript")
+        torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input], output_format="torchscript")
     else:
         print("loading compiled..")
         import ctypes
+
         ctypes.CDLL(
             "/opt/conda/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_plugin.so.11",
             mode=ctypes.RTLD_GLOBAL,
         )
-        torch.ops.load_library(
-            "/opt/conda/lib/python3.11/site-packages/torch_tensorrt/lib/libtorchtrt_runtime.so"
-        )
-        trt_model = torch.jit.load("unet_trt.ts")
+        torch.ops.load_library("/opt/conda/lib/python3.11/site-packages/torch_tensorrt/lib/libtorchtrt_runtime.so")  # type: ignore[no-untyped-call]
+        trt_model = torch.jit.load("unet_trt.ts")  # type: ignore[no-untyped-call]
 
     print("returning model")
     return trt_model
@@ -75,40 +77,44 @@ def load_model(model_path, device):
 class WSIPatchDataset(Dataset):
     """PyTorch Dataset for lazy loading of WSI patches."""
 
-    def __init__(self, coords, slide_data):
+    coords: np.ndarray | list[list[int]]
+    slide_data: dict[str, Any]
+    slide: openslide.OpenSlide | None
+
+    def __init__(self, coords: np.ndarray | list[list[int]], slide_data: dict[str, Any]) -> None:
         self.coords = coords
         self.slide_data = slide_data
         self.slide = None
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.coords)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, tuple[int, int]]:
         if self.slide is None:
             self.slide = openslide.OpenSlide(
-                os.path.join(self.slide_data['fpath'],
-                             self.slide_data['sname'] + f".{self.slide_data['format']}")
+                os.path.join(self.slide_data["fpath"], self.slide_data["sname"] + f".{self.slide_data['format']}")
             )
 
         coord = self.coords[idx]
         region = self.slide.read_region(
-            (self.slide_data['xb'] + coord[0], self.slide_data['yb'] + coord[1]),
-            self.slide_data['level'],
-            (int(self.slide_data['region_size'] * (self.slide_data['downfactor'] / self.slide_data['working_d'])),) * 2
+            (self.slide_data["xb"] + coord[0], self.slide_data["yb"] + coord[1]),
+            self.slide_data["level"],
+            (int(self.slide_data["region_size"] * (self.slide_data["downfactor"] / self.slide_data["working_d"])),) * 2,
         )
 
-        if self.slide_data['working_d'] != self.slide_data['downfactor']:
-            region = region.resize((self.slide_data['region_size'],) * 2)
+        if self.slide_data["working_d"] != self.slide_data["downfactor"]:
+            region = region.resize((self.slide_data["region_size"],) * 2)
 
         from .wsi_image_utils import rgba2rgb
+
         img = rgba2rgb(region)
         img_np = np.array(img)
         tensor = torch.from_numpy(img_np).permute(2, 0, 1)
 
-        return tensor, coord
+        return tensor, (int(coord[0]), int(coord[1]))
 
 
-def predict_ihc_batch(regions_gpu, model, device):
+def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform nuclei detection with stain deconvolution on a batch of regions."""
     from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 
@@ -123,7 +129,7 @@ def predict_ihc_batch(regions_gpu, model, device):
     return output_processed, maps
 
 
-def predict_batch(regions_gpu, model):
+def predict_batch(regions_gpu: torch.Tensor, model: Any) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform nuclei detection on a batch of regions."""
     output, maps = model(regions_gpu)
     output_processed = output.argmax(axis=1).type(torch.bool)

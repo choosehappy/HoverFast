@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import gzip
-import math
 import os
+from multiprocessing import Queue
+from typing import Any
 
 import numpy as np
 from PIL import Image
 
 
-def magnification_from_mpp(mpp):
+def magnification_from_mpp(mpp: float) -> float:
     """
     Find the magnification from the micron per pixel value.
 
@@ -18,10 +21,10 @@ def magnification_from_mpp(mpp):
     Returns:
     float: Calculated magnification.
     """
-    return 40 * 2 ** (np.round(np.log2(0.2425 / mpp)))
+    return float(40 * 2 ** (np.round(np.log2(0.2425 / mpp))))
 
 
-def rgba2rgb(img):
+def rgba2rgb(img: Image.Image) -> Image.Image:
     """
     Convert an RGBA image to an RGB image by merging the alpha channel with a white background.
 
@@ -37,7 +40,7 @@ def rgba2rgb(img):
     return thumb
 
 
-def save_poly(poly, centroid, object_class=None):
+def save_poly(poly: np.ndarray, centroid: np.ndarray, object_class: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Serialize a polygon representing a detected object.
 
@@ -53,27 +56,23 @@ def save_poly(poly, centroid, object_class=None):
     str: Serialized polygon in GeoJSON format.
     """
     if object_class is None:
-        object_class = {'name': 'Nuclei', 'colorRGB': -65536}
-    feature = {}
+        object_class = {"name": "Nuclei", "colorRGB": -65536}
+    feature: dict[str, Any] = {}
     feature["geometry"] = {
-        'type': 'Polygon',
-        'coordinates': (tuple(map(tuple, poly.squeeze())) + (tuple(poly[0].squeeze()),),)
+        "type": "Polygon",
+        "coordinates": (tuple(map(tuple, poly.squeeze())) + (tuple(poly[0].squeeze()),),),
     }
     feature["geometry"]["centroid"] = [int(coord) for coord in centroid]
-    feature["properties"] = {
-        'object_type': 'cell',
-        'classification': object_class,
-        'isLocked': False
-    }
+    feature["properties"] = {"object_type": "cell", "classification": object_class, "isLocked": False}
     feature["type"] = "Feature"
     return feature
 
 
-def writer(features_queue, output_path):
+def writer(features_queue: Queue, output_path: str) -> None:
     """Write serialized features to a gzipped JSON file."""
     first = True
 
-    with gzip.open(output_path, 'wt', encoding="utf-8", compresslevel=5) as file:
+    with gzip.open(output_path, "wt", encoding="utf-8", compresslevel=5) as file:
         file.write("[\n")
 
         while True:
@@ -90,7 +89,7 @@ def writer(features_queue, output_path):
         file.write("\n]")
 
 
-def preload_file_linux(file_path):
+def preload_file_linux(file_path: str) -> int:
     """Signals the Linux page cache to asynchronously preload the file into RAM."""
     fd = os.open(file_path, os.O_RDONLY)
     try:

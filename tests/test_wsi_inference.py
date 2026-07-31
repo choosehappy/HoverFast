@@ -12,7 +12,7 @@ SLIDE_PATH = 'tests/data/'
 ABS_SLIDE_PATH = os.path.abspath(SLIDE_PATH)
 
 # --- small helpers ---
-def _filenames_in(pth): return set(x.name for x in pth.glob('*'))
+def _filenames_in(pth): return {x.name for x in pth.glob('*')}
 
 @pytest.fixture(scope='module')
 def single_svs_dir(tmp_path_factory, svs_small):
