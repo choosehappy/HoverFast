@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from importlib.util import find_spec
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,21 @@ from safetensors import safe_open
 from torch.utils.data import Dataset
 
 from .hoverfast import HoverFast
+
+
+def _find_tensorrt_libs() -> tuple[str, str]:
+    """Dynamically locate TensorRT runtime libraries."""
+    spec = find_spec("torch_tensorrt")
+    if spec and spec.origin:
+        torch_trt_dir = os.path.dirname(spec.origin)  # site-packages/torch_tensorrt
+        site_packages = os.path.dirname(torch_trt_dir)
+        trt_lib = os.path.join(torch_trt_dir, "lib", "libtorchtrt_runtime.so")
+        nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
+    else:
+        site_packages = "/opt/conda/lib/python3.11/site-packages"
+        trt_lib = os.path.join(site_packages, "torch_tensorrt", "lib", "libtorchtrt_runtime.so")
+        nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
+    return nvinfer_base, trt_lib
 
 
 def load_model(model_path: str, device: torch.device) -> Any:
@@ -63,6 +79,9 @@ def load_model(model_path: str, device: torch.device) -> Any:
         print("loading compiled..")
         import ctypes
 
+        # nvinfer_path, trt_runtime_path = _find_tensorrt_libs()
+        # ctypes.CDLL(nvinfer_path, mode=ctypes.RTLD_GLOBAL)
+        # torch.ops.load_library(trt_runtime_path)  # type: ignore[no-untyped-call]
         ctypes.CDLL(
             "/opt/conda/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_plugin.so.11",
             mode=ctypes.RTLD_GLOBAL,
@@ -111,7 +130,7 @@ class WSIPatchDataset(Dataset):
         img_np = np.array(img)
         tensor = torch.from_numpy(img_np).permute(2, 0, 1)
 
-        return tensor, (int(coord[0]), int(coord[1]))
+        return tensor, torch.tensor([int(coord[0]), int(coord[1])], dtype=torch.int64)
 
 
 def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -133,6 +152,10 @@ def predict_batch(regions_gpu: torch.Tensor, model: Any) -> tuple[torch.Tensor, 
     """Perform nuclei detection on a batch of regions."""
     output, maps = model(regions_gpu)
     output_processed = output.argmax(axis=1).type(torch.bool)
-    maps_fp8 = maps.to(torch.float8_e4m3fn)
 
-    return output_processed, maps_fp8
+    if torch.cuda.is_available() and torch.cuda.get_device_properties(0).major >= 9:
+        maps_out = maps.to(torch.float8_e4m3fn)
+    else:
+        maps_out = maps
+
+    return output_processed, maps_out

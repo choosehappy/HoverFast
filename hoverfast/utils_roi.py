@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import glob
 import gzip
-import logging
 import math
 import multiprocessing
 import operator
@@ -28,8 +26,9 @@ from skimage.measure import regionprops
 from skimage.segmentation import watershed
 from tqdm import tqdm
 
-from .utils_stain_deconv import *
+from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 from .utils_wsi import load_model, pre_watershed
+from .wsi_image_utils import ensure_dirs, setup_logger
 
 
 def int_coords(x: np.ndarray) -> np.ndarray:
@@ -369,7 +368,6 @@ def processing_roi(
             output_mask, maps = predict_roi(rgs, model, device)
 
         arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
-    torch.cuda.empty_cache()
     return list(map(tuple.__add__, arg_list1, ((x,) for x in names)))
 
 
@@ -501,35 +499,11 @@ def main_roi(args: argparse.Namespace) -> None:
     stain = args.stain
 
     if n_process is None:
-        n_process = os.cpu_count()
+        n_process = os.cpu_count() or 1
 
-    os.mkdir(outdir) if not os.path.exists(outdir) else None
-    os.mkdir(os.path.join(outdir, "label_mask")) if not os.path.exists(os.path.join(outdir, "label_mask")) else None
-    os.mkdir(os.path.join(outdir, "overlay")) if not os.path.exists(os.path.join(outdir, "overlay")) else None
-    os.mkdir(os.path.join(outdir, "json")) if not os.path.exists(os.path.join(outdir, "json")) else None
+    ensure_dirs(outdir, ["label_mask", "overlay", "json"])
 
-    # config logger
-    logger = logging.getLogger(
-        f"{outdir}/HoverFast_log_" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M")
-    )
-
-    f_handler = logging.FileHandler(
-        f"{outdir}/HoverFast_log_" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M") + ".log"
-    )
-    c_handler = logging.StreamHandler()
-
-    c_handler.setLevel(logging.WARNING)
-    f_handler.setLevel(logging.ERROR)
-
-    # Create formatters and add it to handlers
-    c_format = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-    f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    c_handler.setFormatter(c_format)
-    f_handler.setFormatter(f_format)
-
-    # Add handlers to the logger
-    logger.addHandler(c_handler)
-    logger.addHandler(f_handler)
+    logger = setup_logger(outdir)
 
     # load model
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -564,7 +538,7 @@ def main_roi(args: argparse.Namespace) -> None:
                 width,
                 stain,
             )
-        except Exception:
+        except (OSError, RuntimeError):
             logger.exception(f"Batch {slide_dirs} failed")
     end = time.time() - start
     print(f"running time: {end}, #patches {len(slide_dirs)}")

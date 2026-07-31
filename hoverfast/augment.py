@@ -20,7 +20,11 @@ from albumentations import (
     Rotate,
     VerticalFlip,
 )
-from albumentations.core.transforms_interface import ImageOnlyTransform
+
+try:
+    from albumentations.transforms.transform import ImageOnlyTransform
+except ImportError:
+    from albumentations.core.transforms_interface import ImageOnlyTransform  # noqa: F401
 from skimage.color import hed2rgb, rgb2hed
 
 

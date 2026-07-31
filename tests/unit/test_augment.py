@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for augmentation (hoverfast/augment.py)."""
 
-
 import numpy as np
 import pytest
 from hoverfast.augment import HEDJitterAugmentation, randaugment

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import gzip
+import logging
 import os
 from multiprocessing import Queue
 from typing import Any
@@ -98,3 +100,33 @@ def preload_file_linux(file_path: str) -> int:
     finally:
         os.close(fd)
     return 0
+
+
+def setup_logger(outdir: str) -> logging.Logger:
+    """Create and configure a logger with file and console handlers."""
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M")
+    logger_name = f"{outdir}/HoverFast_log_{timestamp}"
+    logger = logging.getLogger(logger_name)
+
+    f_handler = logging.FileHandler(f"{logger_name}.log")
+    c_handler = logging.StreamHandler()
+    c_handler.setLevel(logging.WARNING)
+    f_handler.setLevel(logging.ERROR)
+
+    c_format = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+    f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    c_handler.setFormatter(c_format)
+    f_handler.setFormatter(f_format)
+
+    logger.addHandler(c_handler)
+    logger.addHandler(f_handler)
+
+    return logger
+
+
+def ensure_dirs(base_dir: str, subdirs: list[str] | None = None) -> None:
+    """Create base directory and optional subdirectories."""
+    os.makedirs(base_dir, exist_ok=True)
+    if subdirs:
+        for subdir in subdirs:
+            os.makedirs(os.path.join(base_dir, subdir), exist_ok=True)

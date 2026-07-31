@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import glob
 import logging
 import math
@@ -19,7 +18,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from .spatialite_utils import get_spatialite_connection, init_spatialite_db_deferred_index
-from .wsi_image_utils import preload_file_linux, writer
+from .wsi_image_utils import ensure_dirs, preload_file_linux, setup_logger, writer
 from .wsi_model import WSIPatchDataset, load_model, predict_batch, predict_ihc_batch
 from .wsi_postprocess import post_processing_batch_task, pre_watershed
 
@@ -247,9 +246,7 @@ def infer_wsi(
     for res in async_results:
         total_objects += res.get()
 
-    if db_output_fname:
-        pass
-    else:
+    if not db_output_fname:
         features_queue.put(None)
         writer_process.join()
 
@@ -278,23 +275,9 @@ def main_wsi(args: argparse.Namespace) -> None:
     if n_process is None:
         n_process = os.cpu_count() or 1
 
-    os.makedirs(outdir, exist_ok=True)
+    ensure_dirs(outdir)
 
-    logger: logging.Logger = logging.getLogger(
-        f"{outdir}/HoverFast_log_" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M")
-    )
-    f_handler: logging.FileHandler = logging.FileHandler(
-        f"{outdir}/HoverFast_log_" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%Hh%M") + ".log"
-    )
-    c_handler: logging.StreamHandler = logging.StreamHandler()
-    c_handler.setLevel(logging.WARNING)
-    f_handler.setLevel(logging.ERROR)
-    c_format: logging.Formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-    f_format: logging.Formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    c_handler.setFormatter(c_format)
-    f_handler.setFormatter(f_format)
-    logger.addHandler(c_handler)
-    logger.addHandler(f_handler)
+    logger: logging.Logger = setup_logger(outdir)
 
     if len(slide_dirs) == 1:
         pattern: str = slide_dirs[0]
@@ -351,5 +334,5 @@ def main_wsi(args: argparse.Namespace) -> None:
             stats[sname].append(n_objects)
             stats[sname].append(time.time() - start)
             print(f"running time: {stats[sname][-1]:.2f}s, #patches {stats[sname][0]} and #objects {stats[sname][1]}")
-        except Exception:
+        except (OSError, RuntimeError):
             logger.exception("File %s failed", sname)

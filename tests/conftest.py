@@ -8,6 +8,7 @@ import pytest
 # openslide aperio test images
 IMAGES_BASE_URL = "https://data.cytomine.coop/open/openslide/aperio-svs/"
 
+
 def md5(fn):
     m = hashlib.md5()
     with open(fn, "rb") as f:
@@ -15,7 +16,8 @@ def md5(fn):
             m.update(chunk)
     return m.hexdigest()
 
-@pytest.fixture(scope='session')
+
+@pytest.fixture(scope="session")
 def svs_small():
     """download the small aperio test image svs"""
     small_image = "CMU-1.svs"
@@ -29,7 +31,7 @@ def svs_small():
         print(f"Downloading {small_image} to {img_fn}")
         # download svs from openslide test images
         url = IMAGES_BASE_URL + small_image
-        with urllib.request.urlopen(url) as response, open(img_fn, 'wb') as out_file:
+        with urllib.request.urlopen(url) as response, open(img_fn, "wb") as out_file:
             shutil.copyfileobj(response, out_file)
 
     if md5(img_fn) != small_image_md5:  # pragma: no cover

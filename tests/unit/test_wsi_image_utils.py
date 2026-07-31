@@ -105,6 +105,7 @@ class TestWriter:
             writer_proc = None
             try:
                 import multiprocessing
+
                 writer_proc = multiprocessing.Process(target=writer, args=(queue, output_path))
                 writer_proc.start()
 

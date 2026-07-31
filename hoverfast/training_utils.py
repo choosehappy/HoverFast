@@ -13,7 +13,6 @@ import skimage.morphology as ndi
 import tables
 import torch
 import torch.nn.functional as F
-from albumentations import *
 from skimage.measure import regionprops
 from tensorboardX import SummaryWriter
 from torch import nn
@@ -21,9 +20,8 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryConfusionMatrix
 from tqdm import tqdm
 
-from .augment import *
+from .augment import randaugment
 from .hoverfast import HoverFast
-from .training_utils import *
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -451,17 +449,23 @@ def main_train(args: argparse.Namespace) -> None:
             stats["loss"]["dice_loss"] = (stats["loss"]["dice_loss"] / n_batches).cpu().numpy()
 
             if phase in validation_phases:
-                stats["cmatrix"] = (stats["cmatrix"] / stats["cmatrix"].sum()).cpu().numpy()
+                cm_sum = stats["cmatrix"].sum()
+                stats["cmatrix"] = (stats["cmatrix"] / cm_sum if cm_sum > 0 else stats["cmatrix"]).cpu().numpy()
 
             # Save metrics to tensorboard
             writer.add_scalars(f"{phase}/loss", stats["loss"], epoch)
             if phase in validation_phases:
-                writer.add_scalar(f"{phase}/accuracy", stats["cmatrix"].trace(), epoch)
-                writer.add_scalar(f"{phase}/precision", stats["cmatrix"][1, 1] / stats["cmatrix"][:, 1].sum(), epoch)
-                writer.add_scalar(f"{phase}/recall", stats["cmatrix"][1, 1] / stats["cmatrix"][1].sum(), epoch)
-                writer.add_scalar(f"{phase}/specificity", stats["cmatrix"][0, 0] / stats["cmatrix"][0].sum(), epoch)
+                cm = stats["cmatrix"]
+                writer.add_scalar(f"{phase}/accuracy", cm.trace(), epoch)
+                col1_sum = cm[:, 1].sum()
+                row1_sum = cm[1].sum()
+                row0_sum = cm[0].sum()
+                col0_sum = cm[:, 0].sum()
+                writer.add_scalar(f"{phase}/precision", cm[1, 1] / col1_sum if col1_sum > 0 else 0.0, epoch)
+                writer.add_scalar(f"{phase}/recall", cm[1, 1] / row1_sum if row1_sum > 0 else 0.0, epoch)
+                writer.add_scalar(f"{phase}/specificity", cm[0, 0] / row0_sum if row0_sum > 0 else 0.0, epoch)
                 writer.add_scalar(
-                    f"{phase}/negative predictive value", stats["cmatrix"][0, 0] / stats["cmatrix"][:, 0].sum(), epoch
+                    f"{phase}/negative predictive value", cm[0, 0] / col0_sum if col0_sum > 0 else 0.0, epoch
                 )
 
             if phase == "train":

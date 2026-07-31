@@ -24,7 +24,7 @@ from .spatialite_utils import (
 
 
 def pre_watershed(
-    output_mask: np.ndarray, maps: list[np.ndarray]
+    output_mask: np.ndarray, maps: np.ndarray
 ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
     """Prepare for watershed segmentation by processing model output maps."""
     if np.all(output_mask == 0):
@@ -187,6 +187,10 @@ def post_processing_batch_task(
 
     batch_features: list[Any] = []
 
+    # for i in range(len(output_batch)):
+    #     maps = maps_tensor[i]
+    #     output_mask = output_batch[i]
+    #     region_coord = coords_batch[i]
     for output_mask, maps, region_coord in zip(output_batch, maps_batch, coords_batch):
         dist, marker, opening = pre_watershed(output_mask, maps)
         if marker is None:
