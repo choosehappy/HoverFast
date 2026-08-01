@@ -17,7 +17,11 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from .spatialite_utils import get_spatialite_connection, init_spatialite_db_deferred_index
+from .spatialite_utils import (
+    configure_for_bulk_load,
+    get_spatialite_connection,
+    init_spatialite_db_deferred_index,
+)
 from .wsi_image_utils import ensure_dirs, preload_file_linux, setup_logger, writer
 from .wsi_model import WSIPatchDataset, load_model, predict_batch, predict_ihc_batch
 from .wsi_postprocess import post_processing_batch_task, pre_watershed
@@ -189,6 +193,7 @@ def infer_wsi(
 
     if db_output_fname:
         conn = get_spatialite_connection(db_output_fname)
+        configure_for_bulk_load(conn)
         init_spatialite_db_deferred_index(conn, srid=0)
     else:
         features_queue = multiprocessing.Manager().Queue()
@@ -202,53 +207,63 @@ def infer_wsi(
     total_objects: int = 0
     async_results: list[Any] = []
 
-    with torch.inference_mode():
-        for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
-            batch_imgs = batch_imgs.to(device, memory_format=torch.channels_last, non_blocking=True)
-            batch_imgs = batch_imgs.half().div(255.0)
+    try:
+        with torch.inference_mode():
+            for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
+                batch_imgs = batch_imgs.to(device, memory_format=torch.channels_last, non_blocking=True)
 
-            if stain == "ihc_dab":
-                output_mask, maps = predict_ihc_batch(batch_imgs, model, device)
-            else:
-                output_mask, maps = predict_batch(batch_imgs, model)
+                if stain == "ihc_dab":
+                    output_mask, maps = predict_ihc_batch(batch_imgs, model, device)
+                else:
+                    output_mask, maps = predict_batch(batch_imgs, model)
 
-            copy_stream: torch.cuda.Stream = torch.cuda.Stream()  # type: ignore[no-untyped-call]
-            copy_stream.wait_stream(torch.cuda.current_stream())
-            with torch.cuda.stream(copy_stream):
-                output_cpu: torch.Tensor = output_mask.to("cpu", non_blocking=True)
-                maps_cpu: torch.Tensor = maps.to("cpu", non_blocking=True)
-                output_mask.record_stream(copy_stream)
-                maps.record_stream(copy_stream)
-            copy_event: torch.cuda.Event = torch.cuda.Event()  # type: ignore[no-untyped-call]
-            copy_event.record(copy_stream)
+                copy_stream: torch.cuda.Stream = torch.cuda.Stream()  # type: ignore[no-untyped-call]
+                copy_stream.wait_stream(torch.cuda.current_stream())
+                with torch.cuda.stream(copy_stream):
+                    output_cpu: torch.Tensor = output_mask.to("cpu", non_blocking=True)
+                    maps_cpu: torch.Tensor = maps.to("cpu", non_blocking=True)
+                    output_mask.record_stream(copy_stream)
+                    maps.record_stream(copy_stream)
+                copy_event: torch.cuda.Event = torch.cuda.Event()  # type: ignore[no-untyped-call]
+                copy_event.record(copy_stream)
 
-            coords_cpu: torch.Tensor = batch_coords_tensor.clone()
-            copy_event.synchronize()
+                coords_cpu: torch.Tensor = batch_coords_tensor.clone()
+                copy_event.synchronize()
 
-            output_cpu.share_memory_()  # type: ignore[no-untyped-call]
-            maps_cpu.share_memory_()  # type: ignore[no-untyped-call]
+                output_cpu.share_memory_()  # type: ignore[no-untyped-call]
+                maps_cpu.share_memory_()  # type: ignore[no-untyped-call]
 
-            if db_output_fname:
-                res: Any = post_proc_pool.apply_async(
-                    post_processing_batch_task,
-                    args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname),
-                )
-            else:
-                res = post_proc_pool.apply_async(
-                    post_processing_batch_task, args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
-                )
+                if db_output_fname:
+                    res: Any = post_proc_pool.apply_async(
+                        post_processing_batch_task,
+                        args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname),
+                    )
+                else:
+                    res = post_proc_pool.apply_async(
+                        post_processing_batch_task, args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
+                    )
 
-            async_results.append(res)
+                async_results.append(res)
 
-    post_proc_pool.close()
-    post_proc_pool.join()
+        post_proc_pool.close()
+        post_proc_pool.join()
 
-    for res in async_results:
-        total_objects += res.get()
+        for res in async_results:
+            total_objects += res.get()
+    finally:
+        if not db_output_fname and writer_process.is_alive():
+            features_queue.put(None)
+            writer_process.join(timeout=5)
+            if writer_process.is_alive():
+                writer_process.terminate()
 
-    if not db_output_fname:
-        features_queue.put(None)
-        writer_process.join()
+        if post_proc_pool is not None and post_proc_pool._state != "TERMINATED":  # type: ignore[attr-defined]
+            try:
+                post_proc_pool.terminate()
+                post_proc_pool.close()
+                post_proc_pool.join()
+            except Exception:
+                pass
 
     return len(coords), total_objects
 

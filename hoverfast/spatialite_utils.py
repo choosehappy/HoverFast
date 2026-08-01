@@ -115,7 +115,8 @@ def bulk_insert_nuclei_wkb(
     cur = conn.cursor()
     cur.execute("BEGIN")
 
-    cur.executemany(insert_sql, records)
+    for i in range(0, len(records), batch_size):
+        cur.executemany(insert_sql, records[i : i + batch_size])
 
     conn.commit()
 

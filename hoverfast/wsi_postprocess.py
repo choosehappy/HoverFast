@@ -17,10 +17,12 @@ from skimage.segmentation import watershed
 
 from .spatialite_utils import (
     bulk_insert_nuclei_wkb,
+    configure_for_bulk_load,
     get_spatialite_connection,
     point_to_wkb,
     poly_to_wkb,
 )
+from .wsi_image_utils import save_poly
 
 
 def pre_watershed(
@@ -39,7 +41,7 @@ def pre_watershed(
 
     sobelh = 1 - cv2.normalize(sobelh, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)  # type: ignore[call-overload]
     sobelv = 1 - cv2.normalize(sobelv, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)  # type: ignore[call-overload]
-    overall = np.sqrt(sobelh**2 + sobelv**2)
+    overall = np.hypot(sobelh, sobelv)
     del sobelh, sobelv
 
     opening = output_mask.astype(np.uint8)
@@ -99,8 +101,12 @@ def watershed_object(
         poly = Polygon(c.squeeze())
         if not poly.is_valid:
             poly = make_valid(poly)
-            while poly.geom_type != "Polygon":
+            for _ in range(10):
+                if poly.geom_type == "Polygon":
+                    break
                 poly = poly.geoms[np.argmax([p.area for p in poly.geoms])]
+            else:
+                continue
             bound = poly.boundary
             if bound.geom_type != "LineString":
                 bound = bound.geoms[np.argmax([p.length for p in bound.geoms])]
@@ -133,8 +139,6 @@ def watershed_object(
                 )
             )
         else:
-            from .wsi_image_utils import save_poly
-
             poly_feat = save_poly(coords, centroid, object_class)
             output.append(ujson.dumps(poly_feat))
 
@@ -204,7 +208,11 @@ def post_processing_batch_task(
     if batch_features:
         if db_output_fname:
             conn = get_spatialite_connection(db_output_fname)
-            bulk_insert_nuclei_wkb(conn, batch_features, srid=0, batch_size=50_000)
+            configure_for_bulk_load(conn)
+            try:
+                bulk_insert_nuclei_wkb(conn, batch_features, srid=0, batch_size=50_000)
+            finally:
+                conn.close()
         else:
             features_queue.put(batch_features)
 

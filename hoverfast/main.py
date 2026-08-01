@@ -6,13 +6,21 @@ import argparse
 import numpy as np
 import torch
 
-torch.cuda.init()  # type: ignore[no-untyped-call]
 
-from . import __version__  # noqa: E402 -- torch.cuda.init() must run before other imports  # noqa: E402
+def _default_batch_gpu() -> int:
+    """Compute default GPU batch size from available VRAM at call time."""
+    if not torch.cuda.is_available():
+        return 1
+    return int(np.round(torch.cuda.mem_get_info()[1] / 1024**3)) // 2 - 1
 
 
 def get_args() -> argparse.Namespace:
     """Parsing command line arguments"""
+
+    if torch.cuda.is_available():
+        torch.cuda.init()  # type: ignore[no-untyped-call]
+
+    from . import __version__
 
     parser = argparse.ArgumentParser(
         prog="HoverFast",
@@ -20,6 +28,7 @@ def get_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"HoverFast {__version__}")
+
     subparsers = parser.add_subparsers(title="mode", help="Three modes: infer_wsi, infer_roi, train ", dest="mode")
 
     ###### INFER WSI PARSER
@@ -69,7 +78,7 @@ def get_args() -> argparse.Namespace:
         "-g",
         "--batch_gpu",
         help="Target batch size for GPU: +1 in batch ~ +2GB VRAM (for pretrain model). Avoid matching or exceeding estimated GPU VRAM.",
-        default=int(np.round(torch.cuda.mem_get_info()[1] / 1024**3)) // 2 - 1 if torch.cuda.is_available() else 1,
+        default=_default_batch_gpu(),
         type=int,
     )
     infer_wsi_parser.add_argument("-t", "--tile_size", help="region size to compute on", default=1024, type=int)
@@ -121,7 +130,7 @@ def get_args() -> argparse.Namespace:
         "-g",
         "--batch_gpu",
         help="Target batch size for GPU: +1 in batch ~ +2GB VRAM (for pretrain model). Avoid matching or exceeding estimated GPU VRAM.",
-        default=int(np.round(torch.cuda.mem_get_info()[1] / 1024**3)) // 2 - 1 if torch.cuda.is_available() else 1,
+        default=_default_batch_gpu(),
         type=int,
     )
     infer_roi_parser.add_argument(

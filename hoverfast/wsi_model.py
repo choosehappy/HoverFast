@@ -47,7 +47,7 @@ def load_model(model_path: str, device: torch.device) -> Any:
 
         import torch_tensorrt
 
-        batch = torch.export.Dim("batch", min=1, max=7)
+        batch = torch.export.Dim("batch", min=1, max=16)
 
         example_input = torch.randn(7, 3, 1024, 1024, device="cuda", dtype=torch.float16)
         dynamic_shapes = {"x": {0: batch}}
@@ -64,7 +64,7 @@ def load_model(model_path: str, device: torch.device) -> Any:
                 torch_tensorrt.Input(
                     min_shape=(1, 3, 1024, 1024),
                     opt_shape=(7, 3, 1024, 1024),
-                    max_shape=(7, 3, 1024, 1024),
+                    max_shape=(16, 3, 1024, 1024),
                     dtype=torch.half,
                 )
             ],
@@ -75,18 +75,16 @@ def load_model(model_path: str, device: torch.device) -> Any:
         )
 
         torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input], output_format="torchscript")
+
+        del example_input
+        torch.cuda.empty_cache()
     else:
         print("loading compiled..")
         import ctypes
 
-        # nvinfer_path, trt_runtime_path = _find_tensorrt_libs()
-        # ctypes.CDLL(nvinfer_path, mode=ctypes.RTLD_GLOBAL)
-        # torch.ops.load_library(trt_runtime_path)  # type: ignore[no-untyped-call]
-        ctypes.CDLL(
-            "/opt/conda/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_plugin.so.11",
-            mode=ctypes.RTLD_GLOBAL,
-        )
-        torch.ops.load_library("/opt/conda/lib/python3.11/site-packages/torch_tensorrt/lib/libtorchtrt_runtime.so")  # type: ignore[no-untyped-call]
+        nvinfer_path, trt_runtime_path = _find_tensorrt_libs()
+        ctypes.CDLL(nvinfer_path, mode=ctypes.RTLD_GLOBAL)
+        torch.ops.load_library(trt_runtime_path)  # type: ignore[no-untyped-call]
         trt_model = torch.jit.load("unet_trt.ts")  # type: ignore[no-untyped-call]
 
     print("returning model")
@@ -108,7 +106,7 @@ class WSIPatchDataset(Dataset):
     def __len__(self) -> int:
         return len(self.coords)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, tuple[int, int]]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         if self.slide is None:
             self.slide = openslide.OpenSlide(
                 os.path.join(self.slide_data["fpath"], self.slide_data["sname"] + f".{self.slide_data['format']}")
@@ -128,7 +126,7 @@ class WSIPatchDataset(Dataset):
 
         img = rgba2rgb(region)
         img_np = np.array(img)
-        tensor = torch.from_numpy(img_np).permute(2, 0, 1)
+        tensor = (torch.from_numpy(img_np).to(torch.float16) / 255.0).permute(2, 0, 1)
 
         return tensor, torch.tensor([int(coord[0]), int(coord[1])], dtype=torch.int64)
 
@@ -153,7 +151,8 @@ def predict_batch(regions_gpu: torch.Tensor, model: Any) -> tuple[torch.Tensor, 
     output, maps = model(regions_gpu)
     output_processed = output.argmax(axis=1).type(torch.bool)
 
-    if torch.cuda.is_available() and torch.cuda.get_device_properties(0).major >= 9:
+    _device = regions_gpu.device
+    if _device.type == "cuda" and torch.cuda.get_device_properties(_device.index).major >= 9:
         maps_out = maps.to(torch.float8_e4m3fn)
     else:
         maps_out = maps
