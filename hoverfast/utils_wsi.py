@@ -197,7 +197,7 @@ def infer_wsi(
         init_spatialite_db_deferred_index(conn, srid=0)
     else:
         features_queue = multiprocessing.Manager().Queue()
-        writer_process: multiprocessing.Process = multiprocessing.Process(
+        writer_process = multiprocessing.Process(
             target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz"))
         )
         writer_process.start()
@@ -212,8 +212,8 @@ def infer_wsi(
     _copy_event: torch.cuda.Event = torch.cuda.Event()  # type: ignore[no-untyped-call]
 
     # Cache function references and stream outside the loop to reduce per-iteration Python overhead.
-    _cuda_current_stream = torch.cuda.current_stream  # type: ignore[attr-defined]
-    _cuda_stream_ctx = torch.cuda.stream  # type: ignore[attr-defined]
+    _cuda_current_stream = torch.cuda.current_stream
+    _cuda_stream_ctx = torch.cuda.stream
     _post_proc_async = post_proc_pool.apply_async
 
     try:

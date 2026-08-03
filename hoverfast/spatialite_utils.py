@@ -45,6 +45,10 @@ def point_to_wkb(centroid: tuple[float, float]) -> bytes:
 
 
 def init_spatialite_db_deferred_index(conn: sqlite3.Connection, srid: int = 0) -> None:
+    # C1 fix: Validate srid type — prevent SQL injection via f-string interpolation
+    if not isinstance(srid, int) or isinstance(srid, bool):
+        raise TypeError(f"srid must be an integer, got {type(srid).__name__}")
+
     cur = conn.cursor()
 
     cur.execute("SELECT count(*) FROM sqlite_master WHERE name='spatial_ref_sys'")
@@ -104,6 +108,10 @@ def bulk_insert_nuclei_wkb(
     srid: int = 0,
     batch_size: int = 50_000,
 ) -> None:
+    # C1 fix: Validate srid type — prevent SQL injection via f-string interpolation
+    if not isinstance(srid, int) or isinstance(srid, bool):
+        raise TypeError(f"srid must be an integer, got {type(srid).__name__}")
+
     insert_sql = f"""
         INSERT INTO nuclei
             (object_type, classification_name, classification_color,

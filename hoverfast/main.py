@@ -11,7 +11,8 @@ def _default_batch_gpu() -> int:
     """Compute default GPU batch size from available VRAM at call time."""
     if not torch.cuda.is_available():
         return 1
-    return int(np.round(torch.cuda.mem_get_info()[1] / 1024**3)) // 2 - 1
+    # C7 fix: Clamp to minimum of 1 for low-VRAM GPUs (e.g., <4 GB)
+    return max(1, int(np.round(torch.cuda.mem_get_info()[1] / 1024**3)) // 2 - 1)
 
 
 def get_args() -> argparse.Namespace:

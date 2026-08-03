@@ -143,7 +143,6 @@ class TestSpatiaLiteConnection:
 
 class TestSridValidation:
 
-    @pytest.mark.xfail(reason="C1: srid type validation not yet implemented")
     def test_non_int_srid_raises_type_error(self):
         """bulk_insert_nuclei_wkb must reject non-integer srid values (C1)."""
         with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as f:
@@ -169,7 +168,6 @@ class TestSridValidation:
             if os.path.exists(db_path):
                 os.remove(db_path)
 
-    @pytest.mark.xfail(reason="C1: srid type validation not yet implemented")
     def test_float_srid_raises_type_error(self):
         """Even a float that looks like an int should be rejected."""
         with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as f:
@@ -194,7 +192,7 @@ class TestSridValidation:
             if os.path.exists(db_path):
                 os.remove(db_path)
 
-    @pytest.mark.xfail(reason="C1: srid validation not yet implemented — negative srid causes IntegrityError")
+    @pytest.mark.xfail(reason="SpatiaLite enforces SRID consistency at column level — srid=-1 violates constraint")
     def test_negative_srid_accepted(self):
         """Negative SRID is technically valid (some systems use it)."""
         with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as f:

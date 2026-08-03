@@ -26,7 +26,10 @@ def _find_tensorrt_libs() -> tuple[str, str]:
         trt_lib = os.path.join(torch_trt_dir, "lib", "libtorchtrt_runtime.so")
         nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
     else:
-        site_packages = "/opt/conda/lib/python3.11/site-packages"
+        # C3 fix: Use sys.prefix instead of hardcoded /opt/conda path
+        import sys
+
+        site_packages = os.path.join(sys.prefix, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
         trt_lib = os.path.join(site_packages, "torch_tensorrt", "lib", "libtorchtrt_runtime.so")
         nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
     return nvinfer_base, trt_lib
@@ -34,6 +37,10 @@ def _find_tensorrt_libs() -> tuple[str, str]:
 
 def load_model(model_path: str, device: torch.device) -> Any:
     """Load the pre-trained model from the given path."""
+    # C2 fix: Validate that the model file exists before attempting to load
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+
     if not os.path.exists("unet_trt.ts"):
         print("not compiled - building")
         with safe_open(model_path, framework="pt") as f:
@@ -134,6 +141,10 @@ class WSIPatchDataset(Dataset):
 def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform nuclei detection with stain deconvolution on a batch of regions."""
     from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+
+    # C6 fix: Ensure float16 dtype for stain deconv (cached tensors are float16)
+    if regions_gpu.dtype != torch.float16:
+        regions_gpu = regions_gpu.half()
 
     hed_batch = rgb_to_hed_torch(regions_gpu, device)
     regions_hematoxylin = extract_h_channel_and_stack(hed_batch)

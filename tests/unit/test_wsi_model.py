@@ -20,7 +20,6 @@ import torch
 
 class TestLoadModelMissingFile:
 
-    @pytest.mark.xfail(reason="C2: load_model silently falls back to torch.jit.load on missing file")
     def test_missing_safetensors_raises_file_not_found(self):
         """load_model() must raise FileNotFoundError when the .safetensors file is absent."""
         from hoverfast.wsi_model import load_model
@@ -96,7 +95,6 @@ class TestPredictBatchCpuPath:
         assert isinstance(maps_out, torch.Tensor)
         assert output_mask.shape[0] == 2
 
-    @pytest.mark.xfail(reason="Stain deconv dtype mismatch (float vs Half) — pre-existing bug")
     def test_predict_ihc_batch_cpu_no_crash(self):
         """predict_ihc_batch should work on CPU without CUDA-specific code paths."""
         from hoverfast.wsi_model import predict_ihc_batch

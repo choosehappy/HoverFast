@@ -21,7 +21,6 @@ class TestDefaultBatchGpu:
         """Simulate what _default_batch_gpu returns for a given VRAM."""
         return max(1, int(vram_gb // 2) - 1)
 
-    @pytest.mark.xfail(reason="C7: _default_batch_gpu returns negative/zero for low VRAM")
     @pytest.mark.parametrize("vram_gb", [0.5, 1.0, 2.0, 3.0])
     def test_low_vram_returns_at_least_one(self, vram_gb):
         """C7 — _default_batch_gpu must clamp to >= 1 for low-VRAM GPUs."""
