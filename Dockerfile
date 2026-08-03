@@ -10,7 +10,7 @@ RUN apt update && \
     apt install -y software-properties-common wget bzip2 git ninja-build \
     vim nano libjpeg-dev libcairo2-dev libgdk-pixbuf2.0-dev libglib2.0-dev \
     libxml2-dev sqlite3 libopenjp2-7-dev libtiff-dev libsqlite3-dev libhdf5-dev libgl1-mesa-glx \
-    build-essential && \
+    spatialite-bin libsqlite3-mod-spatialite build-essential && \
     apt clean
 
 # Install latest openslide version
@@ -35,6 +35,7 @@ RUN conda install -c anaconda python=3.11.5
 
 # Install conda packages
 RUN conda install -c anaconda hdf5
+RUN conda install -c conda-forge libstdcxx-ng
 
 # This line removes local apt repo and makes container more compact
 RUN rm -rf /var/lib/apt/lists/*
@@ -43,6 +44,8 @@ RUN rm -rf /var/lib/apt/lists/*
 WORKDIR /
 COPY ./ /HoverFast
 WORKDIR /HoverFast
-RUN pip install .
+
+RUN pip install uv
+RUN uv pip install . --system
 
 WORKDIR /app

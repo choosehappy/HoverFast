@@ -14,3 +14,6 @@ albumentations==1.2.1
 tensorboard
 tensorboardx
 matplotlib
+safetensors
+tensorrt
+torch-tensorrt

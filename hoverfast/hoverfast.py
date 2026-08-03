@@ -1,15 +1,18 @@
+#!/usr/bin/env python3
 # Adapted from https://discuss.pytorch.org/t/unet-implementation/426
 
+from __future__ import annotations
+
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class HoverFast(nn.Module):
     """
     Implementation of HoverFast based on the HoverNet and U-net architectures.
 
-    HoVer-Net: Simultaneous Segmentation and Classification of Nuclei in 
+    HoVer-Net: Simultaneous Segmentation and Classification of Nuclei in
     Multi-Tissue Histology Images (Graham et al., 2019).
     Convolutional Networks for Biomedical Image Segmentation (Ronneberger et al., 2015).
     MSU-Net: Multi-Scale U-Net for 2D Medical Image Segmentation.
@@ -26,42 +29,53 @@ class HoverFast(nn.Module):
     up_mode (str): One of 'upconv' or 'upsample'. 'upconv' uses transposed convolutions for learned upsampling. 'upsample' uses bilinear upsampling.
     conv_block (str): One of 'unet' or 'msunet'. Specifies which model's convolutional block to use.
     """
-    def __init__(self, in_channels=1, n_classes=2, depth=5, wf=6, padding=False,
-                 batch_norm=False, up_mode='upconv',conv_block="msunet"):
 
-        super(HoverFast, self).__init__()
-        assert up_mode in ('upconv', 'upsample')
-        assert conv_block in ('unet', 'msunet')
+    def __init__(
+        self,
+        in_channels: int = 1,
+        n_classes: int = 2,
+        depth: int = 5,
+        wf: int = 6,
+        padding: bool = False,
+        batch_norm: bool = False,
+        up_mode: str = "upconv",
+        conv_block: str = "msunet",
+    ) -> None:
+
+        super().__init__()
+        assert up_mode in ("upconv", "upsample")
+        assert conv_block in ("unet", "msunet")
         self.padding = padding
         self.depth = depth
         prev_channels = in_channels
         self.down_path = nn.ModuleList()
         for i in range(depth):
-            self.down_path.append((MSUNetConvBlock if conv_block=='msunet' else UNetConvBlock)(prev_channels, 2**(wf+i),
-                                                padding, batch_norm))
-            prev_channels = 2**(wf+i)
-        
-        temp=prev_channels
+            self.down_path.append(
+                (MSUNetConvBlock if conv_block == "msunet" else UNetConvBlock)(
+                    prev_channels, 2 ** (wf + i), padding, batch_norm
+                )
+            )
+            prev_channels = 2 ** (wf + i)
+
+        temp = prev_channels
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
-            self.up_path.append(UNetUpBlock(prev_channels, 2**(wf+i), up_mode,
-                                            padding, batch_norm, conv_block))
-            prev_channels = 2**(wf+i)
+            self.up_path.append(UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, batch_norm, conv_block))
+            prev_channels = 2 ** (wf + i)
 
         self.last = nn.Conv2d(prev_channels, n_classes, kernel_size=1)
-        
-        prev_channels=temp
-        
+
+        prev_channels = temp
+
         self.up_path_m = nn.ModuleList()
         for i in reversed(range(depth - 1)):
-            self.up_path_m.append(UNetUpBlock(prev_channels, 2**(wf+i), up_mode,
-                                            padding, batch_norm, conv_block))
-            prev_channels = 2**(wf+i)
+            self.up_path_m.append(UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, batch_norm, conv_block))
+            prev_channels = 2 ** (wf + i)
 
         self.last_m = nn.Conv2d(prev_channels, 2, kernel_size=1)
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor,torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the HoverFast model.
 
@@ -75,20 +89,19 @@ class HoverFast(nn.Module):
         blocks = []
         for i, down in enumerate(self.down_path):
             x = down(x)
-            if i != len(self.down_path)-1:
+            if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = F.max_pool2d(x, 2)
-                
-        y=x.clone()
+
+        y = x.clone()
 
         for i, up in enumerate(self.up_path_m):
-            y = up(y, blocks[-i-1])
+            y = up(y, blocks[-i - 1])
 
         for i, up in enumerate(self.up_path):
-            x = up(x, blocks[-i-1])
-        
+            x = up(x, blocks[-i - 1])
 
-        return self.last(x),self.last_m(y)
+        return self.last(x), self.last_m(y)
 
 
 class UNetConvBlock(nn.Module):
@@ -104,22 +117,28 @@ class UNetConvBlock(nn.Module):
     batch_norm (bool): Use BatchNorm after layers with an activation function.
     kernel (int): Size of the convolutional kernel. Default is 3.
     """
-    def __init__(self, in_size, out_size, padding, batch_norm, kernel=3):
-        super(UNetConvBlock, self).__init__()
-        block = []
 
-        block.append(nn.Conv2d(in_size, out_size, kernel_size=kernel,
-                               padding=int(padding)))
+    def __init__(
+        self,
+        in_size: int,
+        out_size: int,
+        padding: bool,
+        batch_norm: bool,
+        kernel: int = 3,
+    ) -> None:
+        super().__init__()
+        block: list[nn.Module] = []
+
+        block.append(nn.Conv2d(in_size, out_size, kernel_size=kernel, padding=int(padding)))
         if batch_norm:
             block.append(nn.BatchNorm2d(out_size))
         block.append(nn.ReLU())
 
-        block.append(nn.Conv2d(out_size, out_size, kernel_size=kernel,
-                               padding=int(padding)))
+        block.append(nn.Conv2d(out_size, out_size, kernel_size=kernel, padding=int(padding)))
         if batch_norm:
             block.append(nn.BatchNorm2d(out_size))
         block.append(nn.ReLU())
-        
+
         self.block = nn.Sequential(*block)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -132,8 +151,9 @@ class UNetConvBlock(nn.Module):
         Returns:
         torch.Tensor: Output tensor.
         """
-        out = self.block(x)
+        out: torch.Tensor = self.block(x)
         return out
+
 
 class MSUNetConvBlock(nn.Module):
     """
@@ -149,13 +169,19 @@ class MSUNetConvBlock(nn.Module):
     batch_norm (bool): Use BatchNorm after layers with an activation function.
     """
 
-    def __init__(self, ch_in, ch_out, padding, batch_norm):
-        super(MSUNetConvBlock, self).__init__()
-        self.conv_3 = UNetConvBlock(ch_in, ch_out,padding,batch_norm,kernel=3)
-        self.conv_7 = UNetConvBlock(ch_in, ch_out,3*padding,batch_norm,kernel=7)
+    def __init__(
+        self,
+        ch_in: int,
+        ch_out: int,
+        padding: bool,
+        batch_norm: bool,
+    ) -> None:
+        super().__init__()
+        self.conv_3 = UNetConvBlock(ch_in, ch_out, padding, batch_norm, kernel=3)
+        self.conv_7 = UNetConvBlock(ch_in, ch_out, 3 * padding, batch_norm, kernel=7)  # type: ignore[arg-type]
         self.conv = nn.Conv2d(ch_out * 2, ch_out, kernel_size=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through the MSUNetConvBlock.
 
@@ -172,6 +198,7 @@ class MSUNetConvBlock(nn.Module):
         x = self.conv(x)
         return x
 
+
 class UNetUpBlock(nn.Module):
     """
     U-Net upsampling block.
@@ -187,16 +214,26 @@ class UNetUpBlock(nn.Module):
     conv_block (str): One of 'unet' or 'msunet'. Specifies which model's convolutional block to use.
     """
 
-    def __init__(self, in_size, out_size, up_mode, padding, batch_norm, conv_block):
-        super(UNetUpBlock, self).__init__()
-        if up_mode == 'upconv':
-            self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2,
-                                         stride=2)
-        elif up_mode == 'upsample':
-            self.up = nn.Sequential(nn.Upsample(mode='bilinear', scale_factor=2),
-                                    nn.Conv2d(in_size, out_size, kernel_size=1))
+    def __init__(
+        self,
+        in_size: int,
+        out_size: int,
+        up_mode: str,
+        padding: bool,
+        batch_norm: bool,
+        conv_block: str,
+    ) -> None:
+        super().__init__()
+        if up_mode == "upconv":
+            self.up: nn.Module = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
+        elif up_mode == "upsample":
+            self.up = nn.Sequential(
+                nn.Upsample(mode="bilinear", scale_factor=2), nn.Conv2d(in_size, out_size, kernel_size=1)
+            )
 
-        self.conv_block = (MSUNetConvBlock if conv_block=='msunet' else UNetConvBlock)(in_size, out_size, padding, batch_norm)
+        self.conv_block = (MSUNetConvBlock if conv_block == "msunet" else UNetConvBlock)(
+            in_size, out_size, padding, batch_norm
+        )
 
     def center_crop(self, layer: torch.Tensor, target_size: list[int]) -> torch.Tensor:
         """
@@ -213,7 +250,7 @@ class UNetUpBlock(nn.Module):
         _, _, layer_height, layer_width = layer.size()
         diff_y = (layer_height - target_size[0]) // 2
         diff_x = (layer_width - target_size[1]) // 2
-        return layer[:, :, diff_y:(diff_y + target_size[0]), diff_x:(diff_x + target_size[1])]
+        return layer[:, :, diff_y : (diff_y + target_size[0]), diff_x : (diff_x + target_size[1])]
 
     def forward(self, x: torch.Tensor, bridge: torch.Tensor) -> torch.Tensor:
         """
@@ -226,10 +263,10 @@ class UNetUpBlock(nn.Module):
         Returns:
         torch.Tensor: Output tensor.
         """
-                
+
         up = self.up(x)
         crop1 = self.center_crop(bridge, up.shape[2:])
-        out = torch.cat([up, crop1], 1)
-        out = self.conv_block(out)
+        concatenated = torch.cat([up, crop1], 1)
+        out: torch.Tensor = self.conv_block(concatenated)
 
         return out
