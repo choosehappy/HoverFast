@@ -10,8 +10,8 @@
             "type": "debugpy",
             "request": "launch",
             "module": "hoverfast.main",
-            "args": ["infer_wsi","/workspaces/HoverFast/wsi.svs","-m",
-            "/workspaces/HoverFast/hoverfast_crosstissue_best_model.safetensors", "-n", "8", "-o", "hoverfast_output", "--batch_gpu","7"] //, "-d"] // enable for DB output
+            "args": ["infer_wsi","/workspaces/HoverFast/wsi2.svs","-m",
+            "/workspaces/HoverFast/hoverfast_crosstissue_best_model.safetensors", "-n", "32", "-o", "hoverfast_output", "--batch_gpu","7"] //, "-d"] // enable for DB output
         }
     ]
 }

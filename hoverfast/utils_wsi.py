@@ -207,6 +207,15 @@ def infer_wsi(
     total_objects: int = 0
     async_results: list[Any] = []
 
+    # Create copy stream and event outside the loop to avoid per-iteration allocation overhead.
+    _copy_stream: torch.cuda.Stream = torch.cuda.Stream()  # type: ignore[no-untyped-call]
+    _copy_event: torch.cuda.Event = torch.cuda.Event()  # type: ignore[no-untyped-call]
+
+    # Cache function references and stream outside the loop to reduce per-iteration Python overhead.
+    _cuda_current_stream = torch.cuda.current_stream  # type: ignore[attr-defined]
+    _cuda_stream_ctx = torch.cuda.stream  # type: ignore[attr-defined]
+    _post_proc_async = post_proc_pool.apply_async
+
     try:
         with torch.inference_mode():
             for batch_imgs, batch_coords_tensor in tqdm(loader, desc="Streaming Inference", leave=False):
@@ -217,29 +226,27 @@ def infer_wsi(
                 else:
                     output_mask, maps = predict_batch(batch_imgs, model)
 
-                copy_stream: torch.cuda.Stream = torch.cuda.Stream()  # type: ignore[no-untyped-call]
-                copy_stream.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(copy_stream):
+                _copy_stream.wait_stream(_cuda_current_stream())
+                with _cuda_stream_ctx(_copy_stream):
                     output_cpu: torch.Tensor = output_mask.to("cpu", non_blocking=True)
                     maps_cpu: torch.Tensor = maps.to("cpu", non_blocking=True)
-                    output_mask.record_stream(copy_stream)
-                    maps.record_stream(copy_stream)
-                copy_event: torch.cuda.Event = torch.cuda.Event()  # type: ignore[no-untyped-call]
-                copy_event.record(copy_stream)
+                    output_mask.record_stream(_copy_stream)
+                    maps.record_stream(_copy_stream)
+                _copy_event.record(_copy_stream)
 
                 coords_cpu: torch.Tensor = batch_coords_tensor.clone()
-                copy_event.synchronize()
+                _copy_event.synchronize()
 
                 output_cpu.share_memory_()  # type: ignore[no-untyped-call]
                 maps_cpu.share_memory_()  # type: ignore[no-untyped-call]
 
                 if db_output_fname:
-                    res: Any = post_proc_pool.apply_async(
+                    res: Any = _post_proc_async(
                         post_processing_batch_task,
                         args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname),
                     )
                 else:
-                    res = post_proc_pool.apply_async(
+                    res = _post_proc_async(
                         post_processing_batch_task, args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
                     )
 
