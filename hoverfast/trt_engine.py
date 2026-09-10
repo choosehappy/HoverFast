@@ -120,32 +120,20 @@ def load_engine(engine_path: str) -> Any:
     return torch.jit.load(engine_path)  # type: ignore[no-untyped-call]
 
 
-def build_engine(
-    model_path: str,
-    engine_path: str | None = None,
-    device: torch.device | None = None,
-    min_batch: int = DEFAULT_MIN_BATCH,
-    opt_batch: int = DEFAULT_OPT_BATCH,
-    max_batch: int = DEFAULT_MAX_BATCH,
-    workspace_bytes: int = DEFAULT_WORKSPACE_BYTES,
-) -> str:
-    """Compile a TensorRT engine for the current GPU and save it to disk.
+def _compile_dynamic_engine(
+    model: torch.nn.Module,
+    device: torch.device,
+    min_batch: int,
+    opt_batch: int,
+    max_batch: int,
+    workspace_bytes: int,
+) -> tuple[Any, torch.Tensor]:
+    """Export ``model`` and compile it with a dynamic batch dimension.
 
-    Returns the path of the written engine. Requires ``torch_tensorrt``.
+    Returns the compiled engine together with the example input used for the
+    export (required when serialising the engine).
     """
-    if not tensorrt_available():
-        raise RuntimeError(
-            "TensorRT is not available. Install it first, e.g. "
-            "`pip install tensorrt torch-tensorrt` in an environment matching your "
-            "PyTorch/CUDA build, then re-run `HoverFast build`."
-        )
-
-    engine_path = _engine_path_from_env(engine_path)
-    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     import torch_tensorrt
-
-    model = load_eager_model(model_path, device)
 
     batch = torch.export.Dim("batch", min=min_batch, max=max_batch)
     example_input = torch.randn(
@@ -168,6 +156,65 @@ def build_engine(
         workspace_size=workspace_bytes,
         use_python_runtime=False,
     )
+    return trt_model, example_input
+
+
+def build_engine(
+    model_path: str,
+    engine_path: str | None = None,
+    device: torch.device | None = None,
+    min_batch: int = DEFAULT_MIN_BATCH,
+    opt_batch: int = DEFAULT_OPT_BATCH,
+    max_batch: int = DEFAULT_MAX_BATCH,
+    workspace_bytes: int = DEFAULT_WORKSPACE_BYTES,
+) -> str:
+    """Compile a TensorRT engine for the current GPU and save it to disk.
+
+    Returns the path of the written engine. Requires ``torch_tensorrt``.
+
+    TensorRT must pick a convolution tactic for the *largest* dynamic profile.
+    On GPUs with limited VRAM the tactic for a large ``max_batch`` can exceed
+    the available memory, causing ``compile`` to abort with an obscure
+    "Could not find any implementation" internal error. When that happens the
+    maximum batch size is halved and compilation is retried, so the command
+    still produces a usable engine instead of failing outright.
+    """
+    if not tensorrt_available():
+        raise RuntimeError(
+            "TensorRT is not available. Install it first, e.g. "
+            "`pip install tensorrt torch-tensorrt` in an environment matching your "
+            "PyTorch/CUDA build, then re-run `HoverFast build`."
+        )
+
+    engine_path = _engine_path_from_env(engine_path)
+    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if opt_batch > max_batch:
+        raise ValueError(f"opt_batch ({opt_batch}) must not exceed max_batch ({max_batch}).")
+
+    import torch_tensorrt
+
+    model = load_eager_model(model_path, device)
+
+    effective_max = max_batch
+    while True:
+        try:
+            trt_model, example_input = _compile_dynamic_engine(
+                model, device, min_batch, opt_batch, effective_max, workspace_bytes
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - retry with a smaller profile
+            if effective_max <= opt_batch:
+                raise RuntimeError(
+                    f"Failed to compile a TensorRT engine (min={min_batch}, "
+                    f"opt={opt_batch}, max={effective_max}). Last error: {exc}"
+                ) from exc
+            effective_max = max(opt_batch, effective_max // 2)
+            print(
+                f"[HoverFast] TensorRT compilation failed for max_batch={effective_max * 2}; "
+                f"retrying with max_batch={effective_max}."
+            )
+            torch.cuda.empty_cache()
 
     torch_tensorrt.save(trt_model, engine_path, inputs=[example_input], output_format="torchscript")
     del example_input
