@@ -308,6 +308,168 @@ class Criterion(nn.Module):
         )
 
 
+def _build_model(
+    n_classes: int,
+    in_channels: int,
+    padding: bool,
+    depth: int,
+    wf: int,
+    up_mode: str,
+    batch_norm: bool,
+    conv_block: str,
+    device: torch.device,
+) -> HoverFast:
+    """Instantiate the HoverFast network configured for training."""
+    model = HoverFast(
+        n_classes=n_classes,
+        in_channels=in_channels,
+        padding=padding,
+        depth=depth,
+        wf=wf,
+        up_mode=up_mode,
+        batch_norm=batch_norm,
+        conv_block=conv_block,
+    ).to(device, memory_format=torch.channels_last)  # type: ignore[call-overload]
+    return model  # type: ignore[no-any-return]
+
+
+def _build_dataloaders(
+    datapath: str,
+    dataname: str,
+    phases: list[str],
+    device: torch.device,
+    edge_weight: float,
+    batch_size: int,
+    n_process: int,
+) -> tuple[dict[str, Dataset], dict[str, DataLoader]]:
+    """Create the per-phase datasets and their DataLoaders."""
+    dataset: dict[str, Dataset] = {}
+    data_loader: dict[str, DataLoader] = {}
+    for phase in phases:
+        dataset[phase] = Dataset(
+            os.path.join(datapath, dataname) + f"_{phase}.pytable",
+            device,
+            transforms=randaugment,
+            edge_weight=bool(edge_weight),
+        )
+        data_loader[phase] = DataLoader(
+            dataset[phase], batch_size=batch_size, shuffle=True, num_workers=n_process, pin_memory=True, drop_last=True
+        )
+    return dataset, data_loader
+
+
+def _class_weights_from_dataset(dataset: dict[str, Dataset]) -> np.ndarray:
+    """Derive inverse-frequency class weights from the training pixel counts."""
+    class_weight: np.ndarray = dataset["train"].numpixels[1, :]
+    frequency: np.ndarray = np.sum(class_weight) / class_weight
+    return frequency / np.sum(frequency)  # type: ignore[no-any-return]
+
+
+def _run_phase(
+    phase: str,
+    model: HoverFast,
+    loader: DataLoader,
+    criterion: Criterion,
+    optim: torch.optim.Optimizer,
+    bcm: BinaryConfusionMatrix,
+    device: torch.device,
+    n_classes: int,
+    validation_phases: list[str],
+) -> dict[str, Any]:
+    """Run one train/validation epoch phase and return its aggregated stats."""
+    stats: dict[str, Any] = {"loss": {}}
+    for stat in ["total_loss", "hv_loss", "grad_loss", "crossEntropy_loss", "dice_loss"]:
+        stats["loss"][stat] = 0
+    stats["cmatrix"] = torch.zeros((n_classes, n_classes)).to(device)
+
+    if phase == "train":
+        model.train()
+    else:
+        model.eval()
+
+    for _, (X, y, hvmaps, y_weight, b_weight) in enumerate(tqdm(loader, leave=False)):
+        X = X.type("torch.FloatTensor").to(device, memory_format=torch.channels_last)
+        y = y.type("torch.LongTensor").to(device)
+        hvmaps = hvmaps.to(device)
+        y_weight = y_weight.to(device)
+        b_weight = b_weight.to(device)
+        with torch.set_grad_enabled(phase == "train"):
+            x_pred, hvm_pred = model(X)
+
+            losses: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] = criterion(
+                x_pred, hvm_pred, y, hvmaps, y_weight, b_weight
+            )
+            loss: torch.Tensor = sum(losses)  # type: ignore[assignment]
+
+            if phase == "train":
+                optim.zero_grad()
+                loss.backward()  # type: ignore[no-untyped-call]
+                optim.step()
+
+            stats["loss"]["total_loss"] += loss.detach()
+            stats["loss"]["hv_loss"] += losses[0].detach()
+            stats["loss"]["grad_loss"] += losses[1].detach()
+            stats["loss"]["crossEntropy_loss"] += losses[2].detach()
+            stats["loss"]["dice_loss"] += losses[3].detach()
+
+            if phase in validation_phases:
+                predflat = x_pred.argmax(axis=1).flatten()
+                targetflat = y.flatten()
+
+                stats["cmatrix"] += bcm(predflat, targetflat).detach()
+
+    n_batches: int = len(loader)
+    print(n_batches)
+    for stat in stats["loss"]:
+        stats["loss"][stat] = (stats["loss"][stat] / n_batches).cpu().numpy()
+
+    if phase in validation_phases:
+        cm_sum = stats["cmatrix"].sum()
+        stats["cmatrix"] = (stats["cmatrix"] / cm_sum if cm_sum > 0 else stats["cmatrix"]).cpu().numpy()
+
+    return stats
+
+
+def _log_phase(
+    writer: SummaryWriter, phase: str, stats: dict[str, Any], epoch: int, validation_phases: list[str]
+) -> None:
+    """Write the phase losses and (for validation) metrics to tensorboard."""
+    writer.add_scalars(f"{phase}/loss", stats["loss"], epoch)
+    if phase not in validation_phases:
+        return
+
+    cm = stats["cmatrix"]
+    writer.add_scalar(f"{phase}/accuracy", cm.trace(), epoch)
+    col1_sum = cm[:, 1].sum()
+    row1_sum = cm[1].sum()
+    row0_sum = cm[0].sum()
+    col0_sum = cm[:, 0].sum()
+    writer.add_scalar(f"{phase}/precision", cm[1, 1] / col1_sum if col1_sum > 0 else 0.0, epoch)
+    writer.add_scalar(f"{phase}/recall", cm[1, 1] / row1_sum if row1_sum > 0 else 0.0, epoch)
+    writer.add_scalar(f"{phase}/specificity", cm[0, 0] / row0_sum if row0_sum > 0 else 0.0, epoch)
+    writer.add_scalar(f"{phase}/negative predictive value", cm[0, 0] / col0_sum if col0_sum > 0 else 0.0, epoch)
+
+
+def _save_checkpoint(
+    model: HoverFast,
+    optim: torch.optim.Optimizer,
+    outdir: str,
+    dataname: str,
+    epoch: int,
+    current_loss: float,
+    config: dict[str, Any],
+) -> None:
+    """Persist the best-so-far training checkpoint."""
+    state: dict[str, Any] = {
+        "epoch": epoch + 1,
+        "model_dict": model.state_dict(),
+        "optim_dict": optim.state_dict(),
+        "best_loss_on_test": current_loss,
+        **config,
+    }
+    torch.save(state, f"{outdir}/{dataname}_best_model.pth")
+
+
 def main_train(args: argparse.Namespace) -> None:
     """
     Main function to train the HoverFast model.
@@ -347,36 +509,11 @@ def main_train(args: argparse.Namespace) -> None:
     torch.backends.cudnn.benchmark = True
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize model
-    model = HoverFast(
-        n_classes=n_classes,
-        in_channels=in_channels,
-        padding=padding,
-        depth=depth,
-        wf=wf,
-        up_mode=up_mode,
-        batch_norm=batch_norm,
-        conv_block=conv_block,
-    ).to(device, memory_format=torch.channels_last)  # type: ignore[call-overload]
-
-    # Load dataset and DataLoader
-    dataset: dict[str, Dataset] = {}
-    dataLoader: dict[str, DataLoader] = {}
-    for phase in phases:
-        dataset[phase] = Dataset(
-            os.path.join(datapath, dataname) + f"_{phase}.pytable",
-            device,
-            transforms=randaugment,
-            edge_weight=bool(edge_weight),
-        )
-        dataLoader[phase] = DataLoader(
-            dataset[phase], batch_size=batch_size, shuffle=True, num_workers=n_process, pin_memory=True, drop_last=True
-        )
+    model = _build_model(n_classes, in_channels, padding, depth, wf, up_mode, batch_norm, conv_block, device)
+    dataset, data_loader = _build_dataloaders(datapath, dataname, phases, device, edge_weight, batch_size, n_process)
 
     optim: torch.optim.Optimizer = torch.optim.Adam(model.parameters())
-    class_weight: np.ndarray = dataset["train"].numpixels[1, :]
-    f: np.ndarray = np.sum(class_weight) / class_weight
-    class_weight = f / np.sum(f)
+    class_weight: np.ndarray = _class_weights_from_dataset(dataset)
     class_weight_torch: torch.Tensor = torch.from_numpy(class_weight).type("torch.FloatTensor").to(device)
 
     print(f"class weight: {class_weight_torch}")  # Display class weights
@@ -392,85 +529,32 @@ def main_train(args: argparse.Namespace) -> None:
         )
     )  # Open the tensorboard visualiser
 
-    best_loss_on_test: float = np.Infinity
+    model_config: dict[str, Any] = {
+        "n_classes": n_classes,
+        "in_channels": in_channels,
+        "padding": padding,
+        "depth": depth,
+        "wf": wf,
+        "up_mode": up_mode,
+        "batch_norm": batch_norm,
+        "conv_block": conv_block,
+    }
+
+    best_loss_on_test: float = float("inf")
     torch.tensor(edge_weight).to(device)
     start_time: float = time.time()
     for epoch in range(num_epochs):
+        train_loss: float = 0.0
+        current_loss: float = 0.0
         for phase in phases:
-            stats: dict[str, Any] = {}
-            stats["loss"] = {}
-            for stat in ["total_loss", "hv_loss", "grad_loss", "crossEntropy_loss", "dice_loss"]:
-                stats["loss"][stat] = 0
-            stats["cmatrix"] = torch.zeros((n_classes, n_classes)).to(device)
-
-            if phase == "train":
-                model.train()
-            else:
-                model.eval()
-
-            for _, (X, y, hvmaps, y_weight, b_weight) in enumerate(tqdm(dataLoader[phase], leave=False)):
-                X = X.type("torch.FloatTensor").to(device, memory_format=torch.channels_last)
-                y = y.type("torch.LongTensor").to(device)
-                hvmaps = hvmaps.to(device)
-                y_weight = y_weight.to(device)
-                b_weight = b_weight.to(device)
-                with torch.set_grad_enabled(phase == "train"):
-                    x_pred, hvm_pred = model(X)
-
-                    losses: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] = criterion(
-                        x_pred, hvm_pred, y, hvmaps, y_weight, b_weight
-                    )
-                    loss: torch.Tensor = sum(losses)  # type: ignore[assignment]
-
-                    if phase == "train":
-                        optim.zero_grad()
-                        loss.backward()  # type: ignore[no-untyped-call]
-                        optim.step()
-                        train_loss: float = loss.item()
-
-                    stats["loss"]["total_loss"] += loss.detach()
-                    stats["loss"]["hv_loss"] += losses[0].detach()
-                    stats["loss"]["grad_loss"] += losses[1].detach()
-                    stats["loss"]["crossEntropy_loss"] += losses[2].detach()
-                    stats["loss"]["dice_loss"] += losses[3].detach()
-
-                    if phase in validation_phases:
-                        predflat = x_pred.argmax(axis=1).flatten()
-                        targetflat = y.flatten()
-
-                        stats["cmatrix"] += bcm(predflat, targetflat).detach()
-
-            n_batches: int = len(dataLoader[phase])
-            print(n_batches)
-            stats["loss"]["total_loss"] = (stats["loss"]["total_loss"] / n_batches).cpu().numpy()
-            stats["loss"]["hv_loss"] = (stats["loss"]["hv_loss"] / n_batches).cpu().numpy()
-            stats["loss"]["grad_loss"] = (stats["loss"]["grad_loss"] / n_batches).cpu().numpy()
-            stats["loss"]["crossEntropy_loss"] = (stats["loss"]["crossEntropy_loss"] / n_batches).cpu().numpy()
-            stats["loss"]["dice_loss"] = (stats["loss"]["dice_loss"] / n_batches).cpu().numpy()
-
-            if phase in validation_phases:
-                cm_sum = stats["cmatrix"].sum()
-                stats["cmatrix"] = (stats["cmatrix"] / cm_sum if cm_sum > 0 else stats["cmatrix"]).cpu().numpy()
-
-            # Save metrics to tensorboard
-            writer.add_scalars(f"{phase}/loss", stats["loss"], epoch)
-            if phase in validation_phases:
-                cm = stats["cmatrix"]
-                writer.add_scalar(f"{phase}/accuracy", cm.trace(), epoch)
-                col1_sum = cm[:, 1].sum()
-                row1_sum = cm[1].sum()
-                row0_sum = cm[0].sum()
-                col0_sum = cm[:, 0].sum()
-                writer.add_scalar(f"{phase}/precision", cm[1, 1] / col1_sum if col1_sum > 0 else 0.0, epoch)
-                writer.add_scalar(f"{phase}/recall", cm[1, 1] / row1_sum if row1_sum > 0 else 0.0, epoch)
-                writer.add_scalar(f"{phase}/specificity", cm[0, 0] / row0_sum if row0_sum > 0 else 0.0, epoch)
-                writer.add_scalar(
-                    f"{phase}/negative predictive value", cm[0, 0] / col0_sum if col0_sum > 0 else 0.0, epoch
-                )
+            stats = _run_phase(
+                phase, model, data_loader[phase], criterion, optim, bcm, device, n_classes, validation_phases
+            )
+            _log_phase(writer, phase, stats, epoch, validation_phases)
 
             if phase == "train":
                 train_loss = stats["loss"]["total_loss"]
-            current_loss: float = stats["loss"]["total_loss"]
+            current_loss = stats["loss"]["total_loss"]
 
         print(
             f"{timeSince(start_time, (epoch + 1) / num_epochs)} ([{epoch + 1}/{num_epochs}] {(epoch + 1) / num_epochs * 100:.0f}%), train loss: {train_loss:.4f} test loss: {current_loss:.4f}",
@@ -480,21 +564,6 @@ def main_train(args: argparse.Namespace) -> None:
         if current_loss < best_loss_on_test:
             best_loss_on_test = current_loss
             print("  **")
-            state: dict[str, Any] = {
-                "epoch": epoch + 1,
-                "model_dict": model.state_dict(),
-                "optim_dict": optim.state_dict(),
-                "best_loss_on_test": current_loss,
-                "n_classes": n_classes,
-                "in_channels": in_channels,
-                "padding": padding,
-                "depth": depth,
-                "wf": wf,
-                "up_mode": up_mode,
-                "batch_norm": batch_norm,
-                "conv_block": conv_block,
-            }
-
-            torch.save(state, f"{outdir}/{dataname}_best_model.pth")
+            _save_checkpoint(model, optim, outdir, dataname, epoch, current_loss, model_config)
         else:
             print()

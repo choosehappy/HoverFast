@@ -247,7 +247,7 @@ def watershed_object_roi(
         label = watershed(dist, markers=submarker, mask=opening)  # type: ignore[no-untyped-call]
     else:
         label = rg.image.astype(np.uint8)
-        vals = [1]
+        vals = np.array([1])
     for val in vals:
         cell = np.uint8(label == val)
         c = cv2.findContours(cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=offset)[0][0]  # type: ignore[call-overload]
@@ -322,7 +322,7 @@ def region_feature_roi(
         for i in range(len(temp)):
             poly = temp[i]
             cv2.polylines(img, [poly], -1, color_rgb, width)  # type: ignore[call-overload]
-            cv2.fillPoly(label, [poly], len(features) + i + 1)  # type: ignore[call-overload]
+            cv2.fillPoly(label, [poly], len(features) + i + 1)
         features += [save_poly_dict(poly.astype(float)) for poly in temp]
     # save to Json
     with gzip.open(os.path.join(outdir, "json", sname + ".json.gz"), "wt", encoding="ascii") as zipfile:

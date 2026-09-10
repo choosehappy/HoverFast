@@ -185,6 +185,28 @@ def get_args() -> argparse.Namespace:
         type=int,
     )
 
+    ########### BUILD PARSER
+
+    build_parser = subparsers.add_parser("build", help="Compile a TensorRT engine tuned for the current GPU/machine")
+    build_parser.add_argument(
+        "-m",
+        "--model_path",
+        help="path to the pre-trained model used to build the engine",
+        default="./hoverfast_crosstissue_best_model.safetensors",
+        type=str,
+    )
+    build_parser.add_argument(
+        "-o",
+        "--engine_path",
+        help="output path of the compiled TensorRT engine",
+        default="unet_trt.ts",
+        type=str,
+    )
+    build_parser.add_argument("--min_batch", help="minimum dynamic batch size", default=1, type=int)
+    build_parser.add_argument("--opt_batch", help="optimal dynamic batch size", default=7, type=int)
+    build_parser.add_argument("--max_batch", help="maximum dynamic batch size", default=16, type=int)
+    build_parser.add_argument("--workspace_gb", help="TensorRT workspace size in GB", default=8, type=int)
+
     args = parser.parse_args()
 
     return args
@@ -207,8 +229,13 @@ def main() -> None:
 
         main_train(args)
 
+    elif args.mode == "build":
+        from .trt_engine import build_main
+
+        build_main(args)
+
     else:
-        raise ValueError("Please pick one of the following options: infer_wsi, infer_roi, train.")
+        raise ValueError("Please pick one of the following options: infer_wsi, infer_roi, train, build.")
 
 
 if __name__ == "__main__":

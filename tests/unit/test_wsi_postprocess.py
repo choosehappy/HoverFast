@@ -7,17 +7,22 @@ Covers CRITICAL ISSUES:
 """
 
 import numpy as np
-import pytest
 import torch
-from hoverfast.wsi_postprocess import pre_watershed, post_processing_batch_task
-
+from hoverfast.wsi_postprocess import (
+    _contour_centroid,
+    _repair_polygon,
+    _simplify_contour,
+    centroid_in_valid_region,
+    post_processing_batch_task,
+    pre_watershed,
+)
 
 # ---------------------------------------------------------------------------
 # Existing tests (T3 already covered)
 # ---------------------------------------------------------------------------
 
-class TestPreWatershed:
 
+class TestPreWatershed:
     def test_all_zero_mask_returns_none(self):
         """T3 — pre_watershed returns (None, None, None) for all-zero mask."""
         output_mask = np.zeros((64, 64), dtype=np.uint8)
@@ -65,8 +70,8 @@ class TestPreWatershed:
 # T4: post_processing_batch_task edge cases
 # ---------------------------------------------------------------------------
 
-class TestPostProcessingBatchTask:
 
+class TestPostProcessingBatchTask:
     def _make_slide_data(self):
         return {
             "region_size": 256,
@@ -88,9 +93,7 @@ class TestPostProcessingBatchTask:
         coords_tensor = torch.zeros((0, 2), dtype=torch.int64)
 
         queue = Queue()
-        result = post_processing_batch_task(
-            output_tensor, maps_tensor, coords_tensor, slide_data, queue, None
-        )
+        result = post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, queue, None)
         assert result == 0
 
     def test_all_zero_masks_returns_zero(self):
@@ -104,9 +107,7 @@ class TestPostProcessingBatchTask:
         coords_tensor = torch.tensor([[0, 0], [100, 100], [200, 200]], dtype=torch.int64)
 
         queue = Queue()
-        result = post_processing_batch_task(
-            output_tensor, maps_tensor, coords_tensor, slide_data, queue, None
-        )
+        result = post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, queue, None)
         assert result == 0
 
     def test_single_patch_with_nuclei(self):
@@ -125,9 +126,7 @@ class TestPostProcessingBatchTask:
         coords_tensor = torch.tensor([[0, 0]], dtype=torch.int64)
 
         queue = Queue()
-        result = post_processing_batch_task(
-            output_tensor, maps_tensor, coords_tensor, slide_data, queue, None
-        )
+        result = post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, queue, None)
         assert result >= 1
 
     def test_multiple_patches_mixed_results(self):
@@ -147,9 +146,7 @@ class TestPostProcessingBatchTask:
         coords_tensor = torch.tensor([[0, 0], [256, 256]], dtype=torch.int64)
 
         queue = Queue()
-        result = post_processing_batch_task(
-            output_tensor, maps_tensor, coords_tensor, slide_data, queue, None
-        )
+        result = post_processing_batch_task(output_tensor, maps_tensor, coords_tensor, slide_data, queue, None)
         assert result >= 1  # at least the nuclei from patch 0
 
 
@@ -157,8 +154,8 @@ class TestPostProcessingBatchTask:
 # pre_watershed edge cases
 # ---------------------------------------------------------------------------
 
-class TestPreWatershedEdgeCases:
 
+class TestPreWatershedEdgeCases:
     def test_single_pixel_nucleus(self):
         """A single-pixel 'nucleus' should still produce valid output."""
         output_mask = np.zeros((32, 32), dtype=np.uint8)
@@ -182,3 +179,79 @@ class TestPreWatershedEdgeCases:
         maps = [np.random.rand(64, 64).astype(np.float64)] * 2
         dist, marker, opening = pre_watershed(output_mask, maps)
         assert dist is not None
+
+
+# ---------------------------------------------------------------------------
+# Tile-margin partition (over-segmentation / double-count regression)
+# ---------------------------------------------------------------------------
+
+
+class TestValidRegionPartition:
+    """The valid region must be half-open so adjacent tiles never both claim a
+    cell sitting exactly on the shared margin (the old closed interval did)."""
+
+    REGION = 256
+    STRIDE = 128
+
+    def test_interior_centroid_is_valid(self):
+        assert centroid_in_valid_region(128, 128, self.REGION, self.STRIDE)
+
+    def test_lower_bound_is_inclusive(self):
+        assert centroid_in_valid_region(64, 64, self.REGION, self.STRIDE)
+
+    def test_upper_bound_is_exclusive(self):
+        # x = 192 is the first pixel owned by the next tile.
+        assert not centroid_in_valid_region(192, 128, self.REGION, self.STRIDE)
+        assert not centroid_in_valid_region(128, 192, self.REGION, self.STRIDE)
+
+    def test_boundary_claimed_by_exactly_one_tile(self):
+        step = self.REGION - self.STRIDE  # 128
+        # A physical x on the margin between tile 0 and tile 1.
+        physical_x = 192
+        claims = [
+            centroid_in_valid_region(physical_x - tile * step, 128, self.REGION, self.STRIDE) for tile in range(3)
+        ]
+        assert sum(claims) == 1, f"expected exactly one claim, got {claims}"
+
+    def test_every_coordinate_claimed_at_most_once(self):
+        step = self.REGION - self.STRIDE
+        for physical_x in range(0, 1024):
+            claims = sum(
+                centroid_in_valid_region(physical_x - tile * step, 128, self.REGION, self.STRIDE) for tile in range(9)
+            )
+            assert claims <= 1, f"coordinate {physical_x} claimed by {claims} tiles"
+
+    def test_partition_has_no_gap_inside_coverage(self):
+        step = self.REGION - self.STRIDE
+        # Every integer strictly inside the covered span must be claimed once.
+        for physical_x in range(64, 960):
+            claims = sum(
+                centroid_in_valid_region(physical_x - tile * step, 128, self.REGION, self.STRIDE) for tile in range(9)
+            )
+            assert claims == 1, f"coordinate {physical_x} claimed by {claims} tiles"
+
+
+# ---------------------------------------------------------------------------
+# Contour helpers (extracted from watershed_object)
+# ---------------------------------------------------------------------------
+
+
+class TestContourHelpers:
+    def test_simplify_zero_tolerance_is_noop(self):
+        contour = np.array([[[0, 0]], [[10, 0]], [[10, 10]], [[0, 10]]], dtype=np.int32)
+        out = _simplify_contour(contour, 0)
+        assert np.array_equal(out, contour)
+
+    def test_repair_valid_polygon_is_noop(self):
+        contour = np.array([[[0, 0]], [[10, 0]], [[10, 10]], [[0, 10]]], dtype=np.int32)
+        out = _repair_polygon(contour)
+        assert out is not None
+        assert np.array_equal(out, contour)
+
+    def test_contour_centroid_of_square(self):
+        contour = np.array([[[0, 0]], [[10, 0]], [[10, 10]], [[0, 10]]], dtype=np.int32)
+        assert _contour_centroid(contour) == (5, 5)
+
+    def test_contour_centroid_zero_area_returns_none(self):
+        contour = np.array([[[0, 0]], [[0, 0]], [[0, 0]]], dtype=np.int32)
+        assert _contour_centroid(contour) is None

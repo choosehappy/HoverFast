@@ -148,6 +148,73 @@ def get_slide(
     return slide_data
 
 
+def _build_patch_loader(
+    coords: np.ndarray, slide_data: dict[str, Any], batch_to_gpu: int, n_loader: int
+) -> torch.utils.data.DataLoader:
+    """Create the streaming DataLoader that reads WSI patches lazily."""
+    dataset = WSIPatchDataset(coords, slide_data)
+    return torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_to_gpu,
+        shuffle=False,
+        num_workers=n_loader,
+        pin_memory=True,
+        prefetch_factor=4,
+        persistent_workers=True,
+    )
+
+
+def _open_feature_sink(outdir: str, sname: str, db_output_fname: str | None) -> tuple[Any, Any]:
+    """Initialise the JSON writer process or the SpatiaLite database.
+
+    Returns ``(features_queue, writer_process)`` for JSON output, or
+    ``(None, None)`` when writing to a database.
+    """
+    if db_output_fname:
+        conn = get_spatialite_connection(db_output_fname)
+        configure_for_bulk_load(conn)
+        init_spatialite_db_deferred_index(conn, srid=0)
+        return None, None
+
+    features_queue = multiprocessing.Manager().Queue()
+    writer_process = multiprocessing.Process(
+        target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz"))
+    )
+    writer_process.start()
+    return features_queue, writer_process
+
+
+def _close_feature_sink(features_queue: Any, writer_process: Any) -> None:
+    """Signal the JSON writer to flush and stop, terminating it if stuck."""
+    if features_queue is None or writer_process is None:
+        return
+    if writer_process.is_alive():
+        features_queue.put(None)
+        writer_process.join(timeout=5)
+        if writer_process.is_alive():
+            writer_process.terminate()
+
+
+def _dispatch_postprocess(
+    post_proc_async: Any,
+    output_cpu: torch.Tensor,
+    maps_cpu: torch.Tensor,
+    coords_cpu: torch.Tensor,
+    slide_data: dict[str, Any],
+    features_queue: Any,
+    db_output_fname: str | None,
+) -> Any:
+    """Send one batch to the post-processing pool (JSON or SpatiaLite)."""
+    if db_output_fname:
+        return post_proc_async(
+            post_processing_batch_task,
+            args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname),
+        )
+    return post_proc_async(
+        post_processing_batch_task, args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
+    )
+
+
 def infer_wsi(
     sname: str,
     sformat: str,
@@ -179,33 +246,16 @@ def infer_wsi(
     coords: np.ndarray = find_regions(mask_dir, slide_data)
     print(f"|- Computation starting on {len(coords)} patches.")
 
-    dataset = WSIPatchDataset(coords, slide_data)
-
-    loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_to_gpu,
-        shuffle=False,
-        num_workers=n_loader,
-        pin_memory=True,
-        prefetch_factor=4,
-        persistent_workers=True,
-    )
-
-    if db_output_fname:
-        conn = get_spatialite_connection(db_output_fname)
-        configure_for_bulk_load(conn)
-        init_spatialite_db_deferred_index(conn, srid=0)
-    else:
-        features_queue = multiprocessing.Manager().Queue()
-        writer_process = multiprocessing.Process(
-            target=writer, args=(features_queue, os.path.join(outdir, sname + ".json.gz"))
-        )
-        writer_process.start()
-
+    loader = _build_patch_loader(coords, slide_data, batch_to_gpu, n_loader)
+    features_queue, writer_process = _open_feature_sink(outdir, sname, db_output_fname)
     post_proc_pool = multiprocessing.Pool(processes=n_post_proc)
 
     total_objects: int = 0
     async_results: list[Any] = []
+    # Bound the number of in-flight post-processing tasks. Without this, a slow
+    # writer back-pressures the pool and shared-memory tensors accumulate
+    # without limit until /dev/shm is exhausted.
+    max_in_flight: int = max(2, 2 * n_post_proc)
 
     # Create copy stream and event outside the loop to avoid per-iteration allocation overhead.
     _copy_stream: torch.cuda.Stream = torch.cuda.Stream()  # type: ignore[no-untyped-call]
@@ -240,29 +290,27 @@ def infer_wsi(
                 output_cpu.share_memory_()  # type: ignore[no-untyped-call]
                 maps_cpu.share_memory_()  # type: ignore[no-untyped-call]
 
-                if db_output_fname:
-                    res: Any = _post_proc_async(
-                        post_processing_batch_task,
-                        args=(output_cpu, maps_cpu, coords_cpu, slide_data, None, db_output_fname),
+                async_results.append(
+                    _dispatch_postprocess(
+                        _post_proc_async,
+                        output_cpu,
+                        maps_cpu,
+                        coords_cpu,
+                        slide_data,
+                        features_queue,
+                        db_output_fname,
                     )
-                else:
-                    res = _post_proc_async(
-                        post_processing_batch_task, args=(output_cpu, maps_cpu, coords_cpu, slide_data, features_queue)
-                    )
+                )
 
-                async_results.append(res)
+                if len(async_results) > max_in_flight:
+                    total_objects += async_results.pop(0).get()
 
         post_proc_pool.close()
         post_proc_pool.join()
 
-        for res in async_results:
-            total_objects += res.get()
+        total_objects += sum(res.get() for res in async_results)
     finally:
-        if not db_output_fname and writer_process.is_alive():
-            features_queue.put(None)
-            writer_process.join(timeout=5)
-            if writer_process.is_alive():
-                writer_process.terminate()
+        _close_feature_sink(features_queue, writer_process)
 
         if post_proc_pool is not None and post_proc_pool._state != "TERMINATED":  # type: ignore[attr-defined]
             try:
@@ -275,10 +323,67 @@ def infer_wsi(
     return len(coords), total_objects
 
 
+def _resolve_slide_dirs(slide_dirs: list[str]) -> list[str]:
+    """Expand a single glob pattern into a concrete list of slide paths."""
+    if len(slide_dirs) == 1 and glob.has_magic(slide_dirs[0]):
+        return glob.glob(slide_dirs[0])
+    return slide_dirs
+
+
+def _slide_components(slide_dir: str) -> tuple[str, str, str]:
+    """Split a slide path into ``(name, format, parent directory)``."""
+    sname, _, sformat = os.path.basename(slide_dir).rpartition(".")
+    return sname, sformat, os.path.dirname(slide_dir)
+
+
+def _run_slide_inference(
+    slide_dir: str,
+    outdir: str,
+    mask_dir: str | None,
+    mag: float,
+    batch_to_gpu: int,
+    region_size: int,
+    model: torch.nn.Module,
+    device: torch.device,
+    n_process: int,
+    poly_simplify_tolerance: float,
+    threshold: float,
+    stain: str,
+    db_output: bool,
+    logger: logging.Logger,
+) -> tuple[str, int, int, float]:
+    """Run inference for one slide and return ``(name, patches, objects, seconds)``."""
+    sname, sformat, fpath = _slide_components(slide_dir)
+    print(f"- Working on {sname}")
+    db_output_fname: str | None = outdir + f"/{sname}.sqlite" if db_output else None
+
+    start = time.time()
+    n_patches, n_objects = infer_wsi(
+        sname,
+        sformat,
+        fpath,
+        mask_dir,
+        outdir,
+        mag,
+        batch_to_gpu,
+        region_size,
+        model,
+        device,
+        n_process,
+        poly_simplify_tolerance,
+        threshold,
+        stain,
+        logger,
+        db_output_fname,
+    )
+    elapsed = time.time() - start
+    print(f"running time: {elapsed:.2f}s, #patches {n_patches} and #objects {n_objects}")
+    return sname, n_patches, n_objects, elapsed
+
+
 def main_wsi(args: argparse.Namespace) -> None:
     """Main entry point for nuclei detection on whole slide images (WSI)."""
     print(args)
-    slide_dirs: list[str] = args.slide_folder
     outdir: str = args.outdir
     mask_dir: str | None = args.binmask_dir
     mag: float = args.magnification
@@ -289,7 +394,6 @@ def main_wsi(args: argparse.Namespace) -> None:
     poly_simplify_tolerance: float = args.poly_simplify
     threshold: float = args.size_threshold
     stain: str = args.stain
-
     db_output: bool = args.db_output
 
     multiprocessing.set_start_method("fork", force=True)
@@ -298,48 +402,28 @@ def main_wsi(args: argparse.Namespace) -> None:
         n_process = os.cpu_count() or 1
 
     ensure_dirs(outdir)
-
     logger: logging.Logger = setup_logger(outdir)
 
-    if len(slide_dirs) == 1:
-        pattern: str = slide_dirs[0]
-
-        slide_dirs = glob.glob(pattern) if glob.has_magic(pattern) else [pattern]
-
+    slide_dirs: list[str] = _resolve_slide_dirs(args.slide_folder)
     if not slide_dirs:
         logger.error("No slides detected.")
         raise ValueError("No slides detected.")
-
-    stats: dict[str, list[Any]] = {}
 
     preload_file_linux(slide_dirs[0])
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model: torch.nn.Module = load_model(model_path, device)
 
+    stats: dict[str, list[Any]] = {}
     for si, slide_dir in enumerate(slide_dirs):
         if si + 1 < len(slide_dirs):
             preload_file_linux(slide_dirs[si + 1])
 
-        temp: tuple[str, str, str] = os.path.basename(slide_dir).rpartition(".")
-        sname: str = temp[0]
-        sformat: str = temp[-1]
-        fpath: str = os.path.dirname(slide_dir)
-        print(f"- Working on {sname}")
-        stats[sname] = []
-
-        db_output_fname: str | None = outdir + f"/{sname}.sqlite" if db_output else None
-
         try:
-            start: float = time.time()
-            n_patches: int
-            n_objects: int
-            n_patches, n_objects = infer_wsi(
-                sname,
-                sformat,
-                fpath,
-                mask_dir,
+            sname, n_patches, n_objects, elapsed = _run_slide_inference(
+                slide_dir,
                 outdir,
+                mask_dir,
                 mag,
                 batch_to_gpu,
                 region_size,
@@ -349,12 +433,10 @@ def main_wsi(args: argparse.Namespace) -> None:
                 poly_simplify_tolerance,
                 threshold,
                 stain,
+                db_output,
                 logger,
-                db_output_fname,
             )
-            stats[sname].append(n_patches)
-            stats[sname].append(n_objects)
-            stats[sname].append(time.time() - start)
-            print(f"running time: {stats[sname][-1]:.2f}s, #patches {stats[sname][0]} and #objects {stats[sname][1]}")
+            stats[sname] = [n_patches, n_objects, elapsed]
         except (OSError, RuntimeError):
+            sname, _, _ = _slide_components(slide_dir)
             logger.exception("File %s failed", sname)
