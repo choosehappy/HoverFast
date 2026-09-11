@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for WSI utility functions (hoverfast/utils_wsi.py).
+"""Unit tests for WSI utility functions (hoverfast/wsi/pipeline.py).
 
 Covers CRITICAL ISSUES:
   T5  — find_regions with no tissue detected
@@ -23,7 +23,7 @@ class TestFindRegionsNoTissue:
 
     def test_find_regions_empty_result_on_white_image(self):
         """When the WSI is entirely white, find_regions should return empty array."""
-        from hoverfast.utils_wsi import find_regions
+        from hoverfast.wsi.pipeline import find_regions
 
         slide_data = {
             "fpath": "/tmp",
@@ -61,7 +61,7 @@ class TestGetSlide:
         """When MPP property is absent, default of 0.245 should be used."""
         import openslide
 
-        from hoverfast.utils_wsi import get_slide
+        from hoverfast.wsi.pipeline import get_slide
         import logging
 
         mock_osh = MagicMock()
@@ -104,7 +104,7 @@ class TestGetSlide:
 
     def test_get_slide_base_mag_lower_than_requested_raises(self):
         """When base magnification is below requested level, ValueError should be raised."""
-        from hoverfast.utils_wsi import get_slide
+        from hoverfast.wsi.pipeline import get_slide
         import logging
 
         mock_osh = MagicMock()
@@ -144,7 +144,7 @@ class TestPreloadFileLinux:
 
     def test_preload_on_non_linux_no_crash(self):
         """preload_file_linux should silently return 0 on non-Linux platforms."""
-        from hoverfast.wsi_image_utils import preload_file_linux
+        from hoverfast.wsi.image_utils import preload_file_linux
 
         # On Linux, preload_file_linux calls os.open() which may fail for nonexistent files.
         # The function is a no-op on non-Linux — verify it doesn't crash when patched.
@@ -154,7 +154,7 @@ class TestPreloadFileLinux:
 
     def test_preload_on_nonexistent_file(self):
         """Should not crash when file doesn't exist (non-fatal in main flow)."""
-        from hoverfast.wsi_image_utils import preload_file_linux
+        from hoverfast.wsi.image_utils import preload_file_linux
 
         with patch("os.open", side_effect=FileNotFoundError()):
             with pytest.raises(FileNotFoundError):
@@ -162,7 +162,7 @@ class TestPreloadFileLinux:
 
     def test_preload_on_linux_with_posix_fadvise(self):
         """On Linux with posix_fadvise available, should call it."""
-        from hoverfast.wsi_image_utils import preload_file_linux
+        from hoverfast.wsi.image_utils import preload_file_linux
 
         mock_fd = 42
         with patch("os.open", return_value=mock_fd), \
@@ -179,7 +179,7 @@ class TestPreloadFileLinux:
 
     def test_preload_on_nonexistent_file(self):
         """Should not crash when file doesn't exist (non-fatal in main flow)."""
-        from hoverfast.wsi_image_utils import preload_file_linux
+        from hoverfast.wsi.image_utils import preload_file_linux
 
         with patch("os.open", side_effect=FileNotFoundError()):
             with pytest.raises(FileNotFoundError):
@@ -193,14 +193,14 @@ class TestPreloadFileLinux:
 class TestEnsureDirs:
 
     def test_creates_base_dir(self, tmp_path):
-        from hoverfast.wsi_image_utils import ensure_dirs
+        from hoverfast.wsi.image_utils import ensure_dirs
 
         target = tmp_path / "new_dir"
         ensure_dirs(str(target))
         assert target.is_dir()
 
     def test_creates_subdirs(self, tmp_path):
-        from hoverfast.wsi_image_utils import ensure_dirs
+        from hoverfast.wsi.image_utils import ensure_dirs
 
         target = tmp_path / "base"
         ensure_dirs(str(target), ["sub1", "sub2"])
@@ -208,7 +208,7 @@ class TestEnsureDirs:
         assert (target / "sub2").is_dir()
 
     def test_no_error_if_exists(self, tmp_path):
-        from hoverfast.wsi_image_utils import ensure_dirs
+        from hoverfast.wsi.image_utils import ensure_dirs
 
         target = tmp_path / "existing"
         target.mkdir()
@@ -222,7 +222,7 @@ class TestEnsureDirs:
 class TestSetupLogger:
 
     def test_returns_logger(self, tmp_path):
-        from hoverfast.wsi_image_utils import setup_logger
+        from hoverfast.wsi.image_utils import setup_logger
 
         logger = setup_logger(str(tmp_path))
         assert logger is not None
@@ -236,20 +236,20 @@ class TestSetupLogger:
 class TestMagnificationFromMpp:
 
     def test_standard_mpp_0_24(self):
-        from hoverfast.wsi_image_utils import magnification_from_mpp
+        from hoverfast.wsi.image_utils import magnification_from_mpp
 
         mag = magnification_from_mpp(0.24)
         assert abs(mag - 40.0) < 1.0
 
     def test_high_mpp_low_mag(self):
-        from hoverfast.wsi_image_utils import magnification_from_mpp
+        from hoverfast.wsi.image_utils import magnification_from_mpp
 
         mag = magnification_from_mpp(0.5)
         assert mag < 40.0
 
     def test_very_small_mpp(self):
         """Edge case: extremely small MPP (super-high resolution)."""
-        from hoverfast.wsi_image_utils import magnification_from_mpp
+        from hoverfast.wsi.image_utils import magnification_from_mpp
 
         mag = magnification_from_mpp(0.01)
         assert mag > 40.0

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Unit tests for WSI image utilities (hoverfast/wsi_image_utils.py)."""
+"""Unit tests for WSI image utilities (hoverfast/wsi/image_utils.py)."""
 
 import gzip
 import os
 import tempfile
 
 import numpy as np
-from hoverfast.wsi_image_utils import magnification_from_mpp, rgba2rgb, save_poly, writer
+from hoverfast.wsi.image_utils import magnification_from_mpp, rgba2rgb, save_poly, writer
 from PIL import Image
 
 

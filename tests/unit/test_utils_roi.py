@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for ROI utilities (hoverfast/utils_roi.py).
+"""Unit tests for ROI utilities (hoverfast/roi/pipeline.py).
 
 Covers CRITICAL ISSUES:
   C9 — Infinite loop in watershed_object_roi when geometry keeps failing
@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
-from hoverfast.utils_roi import divide_batch, int_coords, save_poly_dict
+from hoverfast.roi.pipeline import divide_batch, int_coords, save_poly_dict
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class TestWatershedObjectRoiInfiniteLoopGuard:
 
     def test_watershed_object_roi_returns_on_invalid_geometry(self):
         """T6 — watershed_object_roi must not hang on pathological geometry."""
-        from hoverfast.utils_roi import watershed_object_roi
+        from hoverfast.roi.pipeline import watershed_object_roi
         from skimage.measure._regionprops import RegionProperties
         from unittest.mock import MagicMock
 
@@ -129,7 +129,7 @@ class TestWatershedObjectRoiInfiniteLoopGuard:
 
     def test_watershed_object_roi_with_valid_contour(self):
         """Normal case: valid contour should produce output."""
-        from hoverfast.utils_roi import watershed_object_roi
+        from hoverfast.roi.pipeline import watershed_object_roi
         from unittest.mock import MagicMock
 
         rg = MagicMock()
@@ -154,7 +154,7 @@ class TestWatershedObjectRoiInfiniteLoopGuard:
 
     def test_watershed_object_roi_below_threshold(self):
         """Contours below area threshold should be skipped."""
-        from hoverfast.utils_roi import watershed_object_roi
+        from hoverfast.roi.pipeline import watershed_object_roi
         from unittest.mock import MagicMock
 
         rg = MagicMock()
@@ -186,7 +186,7 @@ class TestPredictRoiTinyImages:
     def test_predict_roi_with_minimal_image(self):
         """T9 — predict_roi should handle very small images without index errors."""
         import torch
-        from hoverfast.utils_roi import predict_roi
+        from hoverfast.roi.pipeline import predict_roi
 
         # Create a 256x256 image (minimum size to avoid padding overflow)
         regions = np.random.randint(0, 256, (1, 256, 256, 3), dtype=np.uint8)
@@ -212,7 +212,7 @@ class TestPredictRoiTinyImages:
     def test_predict_roi_ihc_with_minimal_image(self):
         """T9 — predict_roi_ihc should handle reasonable-sized images."""
         import torch
-        from hoverfast.utils_roi import predict_roi_ihc
+        from hoverfast.roi.pipeline import predict_roi_ihc
 
         # 256x256 to avoid padding overflow in stain deconvolution
         regions = np.random.randint(0, 256, (1, 256, 256, 3), dtype=np.uint8)
@@ -244,7 +244,7 @@ class TestMultiprocRoi:
     @pytest.mark.xfail(reason="divide_batch fails on empty list — pre-existing bug")
     def test_multiproc_roi_with_empty_list(self):
         """Empty arg_list should return empty result or not crash."""
-        from hoverfast.utils_roi import multiproc_roi
+        from hoverfast.roi.pipeline import multiproc_roi
 
         # Empty list → divide_batch yields nothing → pool.imap returns empty iterator
         # Use a top-level function instead of lambda (lambda can't be pickled)
@@ -253,7 +253,7 @@ class TestMultiprocRoi:
 
     def test_multiproc_roi_output_false(self):
         """When output=False, function should return None."""
-        from hoverfast.utils_roi import multiproc_roi
+        from hoverfast.roi.pipeline import multiproc_roi
 
         # Use a top-level function instead of lambda (lambda can't be pickled)
         result = multiproc_roi(str, ["a", "b"], n_process=2, output=False)
@@ -268,7 +268,7 @@ class TestProcessingRoi:
 
     def test_processing_roi_empty_regions(self):
         """Empty regions array should return empty list."""
-        from hoverfast.utils_roi import processing_roi
+        from hoverfast.roi.pipeline import processing_roi
         import torch
 
         mock_model = MagicMock()

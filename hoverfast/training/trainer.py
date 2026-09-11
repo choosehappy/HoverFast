@@ -20,8 +20,8 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryConfusionMatrix
 from tqdm import tqdm
 
+from ..models.hoverfast import HoverFast
 from .augment import randaugment
-from .hoverfast import HoverFast
 
 
 class Dataset(torch.utils.data.Dataset):

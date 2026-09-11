@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 def _find_tensorrt_libs() -> tuple[str, str]:
     """Dynamically locate TensorRT runtime libraries.
 
-    Kept here (rather than in :mod:`hoverfast.trt_engine`) for backwards
+    Kept here (rather than in :mod:`hoverfast.models.trt_engine`) for backwards
     compatibility: existing code and tests import it from this module.
     """
     spec = find_spec("torch_tensorrt")
@@ -46,7 +46,7 @@ def load_model(
 
     Prefers a compiled TensorRT engine and transparently falls back to eager
     PyTorch (with an explicit build hint) when the engine is missing or was
-    compiled for a different machine. See :func:`hoverfast.trt_engine.resolve_model`.
+    compiled for a different machine. See :func:`hoverfast.models.trt_engine.resolve_model`.
     """
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
@@ -92,7 +92,7 @@ class WSIPatchDataset(Dataset):
         if self.slide_data["working_d"] != self.slide_data["downfactor"]:
             region = region.resize((self.slide_data["region_size"],) * 2)
 
-        from .wsi_image_utils import rgba2rgb
+        from ..wsi.image_utils import rgba2rgb
 
         img = rgba2rgb(region)
         img_np = np.array(img)
@@ -103,7 +103,7 @@ class WSIPatchDataset(Dataset):
 
 def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform nuclei detection with stain deconvolution on a batch of regions."""
-    from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+    from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 
     # C6 fix: Ensure float16 dtype for stain deconv (cached tensors are float16)
     if regions_gpu.dtype != torch.float16:

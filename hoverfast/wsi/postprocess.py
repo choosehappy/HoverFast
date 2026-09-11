@@ -15,14 +15,14 @@ from shapely.validation import make_valid
 from skimage.measure import regionprops
 from skimage.segmentation import watershed
 
-from .spatialite_utils import (
+from ..common.spatialite import (
     bulk_insert_nuclei_wkb,
     configure_for_bulk_load,
     get_spatialite_connection,
     point_to_wkb,
     poly_to_wkb,
 )
-from .wsi_image_utils import save_poly
+from .image_utils import save_poly
 
 
 def pre_watershed(

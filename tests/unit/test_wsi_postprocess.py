@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for WSI post-processing (hoverfast/wsi_postprocess.py).
+"""Unit tests for WSI post-processing (hoverfast/wsi/postprocess.py).
 
 Covers CRITICAL ISSUES:
   T3  — pre_watershed all-zero mask returns None
@@ -8,7 +8,7 @@ Covers CRITICAL ISSUES:
 
 import numpy as np
 import torch
-from hoverfast.wsi_postprocess import (
+from hoverfast.wsi.postprocess import (
     _contour_centroid,
     _repair_polygon,
     _simplify_contour,

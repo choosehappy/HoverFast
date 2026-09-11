@@ -26,9 +26,10 @@ from skimage.measure import regionprops
 from skimage.segmentation import watershed
 from tqdm import tqdm
 
-from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
-from .utils_wsi import load_model, pre_watershed
-from .wsi_image_utils import ensure_dirs, setup_logger
+from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+from ..models.wsi_model import load_model
+from ..wsi.image_utils import ensure_dirs, setup_logger
+from ..wsi.postprocess import pre_watershed
 
 
 def int_coords(x: np.ndarray) -> np.ndarray:

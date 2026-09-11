@@ -17,16 +17,16 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from .spatialite_utils import (
+from ..common.spatialite import (
     configure_for_bulk_load,
     get_spatialite_connection,
     init_spatialite_db_deferred_index,
 )
-from .wsi_image_utils import ensure_dirs, preload_file_linux, setup_logger, writer
-from .wsi_model import WSIPatchDataset, load_model, predict_batch, predict_ihc_batch
-from .wsi_postprocess import post_processing_batch_task, pre_watershed
+from ..models.wsi_model import WSIPatchDataset, load_model, predict_batch, predict_ihc_batch
+from .image_utils import ensure_dirs, preload_file_linux, setup_logger, writer
+from .postprocess import post_processing_batch_task, pre_watershed
 
-# Backward-compatible re-exports for utils_roi.py and other consumers
+# Public API of the WSI pipeline
 __all__: list[str] = [
     "main_wsi",
     "infer_wsi",
@@ -44,7 +44,7 @@ def find_regions(mask_dir: str | None, slide_data: dict[str, Any]) -> np.ndarray
         osh = openslide.open_slide(os.path.join(slide_data["fpath"], slide_data["sname"] + f".{slide_data['format']}"))
         level: int = np.argwhere(np.array(osh.level_downsamples) - 32 <= 10**-2).reshape(-1)[-1]
         upscale_factor: float = osh.level_downsamples[level]
-        from .wsi_image_utils import rgba2rgb
+        from .image_utils import rgba2rgb
 
         mask = rgba2rgb(
             osh.read_region(
@@ -118,7 +118,7 @@ def get_slide(
     else:
         mpp = float(mpp_value)
 
-    from .wsi_image_utils import magnification_from_mpp
+    from .image_utils import magnification_from_mpp
 
     base_mag: float = magnification_from_mpp(mpp)
     slide_data["base_mag"] = base_mag

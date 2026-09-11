@@ -13,6 +13,22 @@ Welcome to the official repository of HoverFast, a high-performance tool designe
 
 HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging. For more info on the inner workings of HoverFast, do not hesitate to go over our [paper](https://joss.theoj.org/papers/10.21105/joss.07022#)
 
+## Repository Structure
+
+The `hoverfast/` package is organized by concept:
+
+```
+hoverfast/
+├── main.py       # CLI entry point (infer_wsi, infer_roi, train, build)
+├── models/       # network architecture, model loading and TensorRT engine
+├── wsi/          # whole-slide inference pipeline, post-processing and image I/O
+├── roi/          # region-of-interest inference pipeline
+├── training/     # training loop and data augmentation
+└── common/       # shared SpatiaLite and stain-deconvolution helpers
+```
+
+Comprehensive unit tests live under `tests/unit/`, with end-to-end CLI tests in `tests/`.
+
 ## Documentation
 
 An overview of the documentation is provided in this repository, but for more details, please visit the full [official documentation](https://hoverfast.readthedocs.io/en/latest/)
@@ -105,6 +121,16 @@ HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstis
 ```
 HoverFast infer_roi path/to/rois/*png -m hoverfast_pretrained_pannuke.pth -o hoverfast_output
 ```
+
+#### Building a TensorRT Engine
+
+TensorRT engines are machine-specific and must be compiled on the GPU where inference will run. The `build` sub-command produces an engine tuned for the current GPU:
+
+```
+HoverFast build -m hoverfast_crosstissue_best_model.safetensors -o unet_trt.ts
+```
+
+If no compatible engine is found, inference transparently falls back to eager PyTorch and prints a build hint, so building is optional but recommended for maximum throughput.
 
 ### Using Containers
 

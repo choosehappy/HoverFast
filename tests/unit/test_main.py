@@ -133,7 +133,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.utils_wsi.main_wsi") as mock_fn:
+             patch("hoverfast.wsi.pipeline.main_wsi") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "infer_wsi"
@@ -146,7 +146,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.utils_roi.main_roi") as mock_fn:
+             patch("hoverfast.roi.pipeline.main_roi") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "infer_roi"
@@ -159,7 +159,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.training_utils.main_train") as mock_fn:
+             patch("hoverfast.training.trainer.main_train") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "train"

@@ -215,22 +215,22 @@ def get_args() -> argparse.Namespace:
 def main() -> None:
     args = get_args()
     if args.mode == "infer_wsi":
-        from .utils_wsi import main_wsi
+        from .wsi.pipeline import main_wsi
 
         main_wsi(args)
 
     elif args.mode == "infer_roi":
-        from .utils_roi import main_roi
+        from .roi.pipeline import main_roi
 
         main_roi(args)
 
     elif args.mode == "train":
-        from .training_utils import main_train
+        from .training.trainer import main_train
 
         main_train(args)
 
     elif args.mode == "build":
-        from .trt_engine import build_main
+        from .models.trt_engine import build_main
 
         build_main(args)
 

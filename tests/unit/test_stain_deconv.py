@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Unit tests for stain deconvolution utilities (hoverfast/utils_stain_deconv.py)."""
+"""Unit tests for stain deconvolution utilities (hoverfast/common/stain_deconv.py)."""
 
 import pytest
 import torch
-from hoverfast.utils_stain_deconv import (
+from hoverfast.common.stain_deconv import (
     extract_h_channel_and_stack,
     hed_to_rgb_torch,
     rgb_to_hed_torch,

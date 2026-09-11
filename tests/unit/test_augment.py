@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Unit tests for augmentation (hoverfast/augment.py)."""
+"""Unit tests for augmentation (hoverfast/training/augment.py)."""
 
 import numpy as np
 import pytest
-from hoverfast.augment import HEDJitterAugmentation, randaugment
+from hoverfast.training.augment import HEDJitterAugmentation, randaugment
 
 
 class TestHEDJitterAugmentationInit:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for SpatiaLite utilities (hoverfast/spatialite_utils.py).
+"""Unit tests for SpatiaLite utilities (hoverfast/common/spatialite.py).
 
 Covers CRITICAL ISSUES:
   C1 — SQL injection via f-string interpolation of srid
@@ -12,7 +12,7 @@ import tempfile
 
 import numpy as np
 import pytest
-from hoverfast.spatialite_utils import (
+from hoverfast.common.spatialite import (
     bulk_insert_nuclei_wkb,
     configure_for_bulk_load,
     get_spatialite_connection,
@@ -109,7 +109,7 @@ class TestSpatiaLiteConnection:
             centroid = (5.0, 5.0)
             obj_class = {"name": "Nuclei", "colorRGB": -65536}
 
-            from hoverfast.spatialite_utils import build_row_wkb
+            from hoverfast.common.spatialite import build_row_wkb
 
             records = [build_row_wkb(poly, centroid, obj_class)]
             bulk_insert_nuclei_wkb(conn, records, srid=0)
@@ -155,7 +155,7 @@ class TestSridValidation:
             centroid = (5.0, 5.0)
             obj_class = {"name": "Nuclei", "colorRGB": -65536}
 
-            from hoverfast.spatialite_utils import build_row_wkb
+            from hoverfast.common.spatialite import build_row_wkb
 
             records = [build_row_wkb(poly, centroid, obj_class)]
 
@@ -180,7 +180,7 @@ class TestSridValidation:
             centroid = (5.0, 5.0)
             obj_class = {"name": "Nuclei", "colorRGB": -65536}
 
-            from hoverfast.spatialite_utils import build_row_wkb
+            from hoverfast.common.spatialite import build_row_wkb
 
             records = [build_row_wkb(poly, centroid, obj_class)]
 
@@ -205,7 +205,7 @@ class TestSridValidation:
             centroid = (5.0, 5.0)
             obj_class = {"name": "Nuclei", "colorRGB": -65536}
 
-            from hoverfast.spatialite_utils import build_row_wkb
+            from hoverfast.common.spatialite import build_row_wkb
 
             records = [build_row_wkb(poly, centroid, obj_class)]
 
@@ -239,7 +239,7 @@ class TestBulkInsertRollback:
             centroid = (5.0, 5.0)
             obj_class = {"name": "Nuclei", "colorRGB": -65536}
 
-            from hoverfast.spatialite_utils import build_row_wkb
+            from hoverfast.common.spatialite import build_row_wkb
 
             # Insert some valid records first
             good_records = [build_row_wkb(poly, centroid, obj_class)]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for TensorRT engine lifecycle (hoverfast/trt_engine.py).
+"""Unit tests for TensorRT engine lifecycle (hoverfast/models/trt_engine.py).
 
 Covers the graceful-degradation contract: inference must never crash when the
 compiled engine is missing or was built for a different machine; instead it
@@ -13,17 +13,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from hoverfast import trt_engine
+from hoverfast.models import trt_engine
 
 
 class TestTensorrtAvailable:
     def test_false_when_torch_tensorrt_missing(self):
-        with patch("hoverfast.trt_engine.find_spec", return_value=None):
+        with patch("hoverfast.models.trt_engine.find_spec", return_value=None):
             assert trt_engine.tensorrt_available() is False
 
     def test_false_when_import_fails(self):
         with (
-            patch("hoverfast.trt_engine.find_spec", return_value=MagicMock()),
+            patch("hoverfast.models.trt_engine.find_spec", return_value=MagicMock()),
             patch.dict("sys.modules", {"torch_tensorrt": None, "tensorrt": None}),
         ):
             # find_spec is mocked to return a spec, but importing raises.
@@ -47,7 +47,7 @@ class TestResolveModelFallback:
     def test_missing_engine_falls_back_to_eager(self, tmp_path, capsys):
         engine = str(tmp_path / "missing.ts")
         dummy = self._dummy_model()
-        with patch("hoverfast.trt_engine.load_eager_model", return_value=dummy) as mock_eager:
+        with patch("hoverfast.models.trt_engine.load_eager_model", return_value=dummy) as mock_eager:
             model = trt_engine.resolve_model("model.safetensors", torch.device("cpu"), engine_path=engine)
         assert model is dummy
         mock_eager.assert_called_once()
@@ -60,8 +60,8 @@ class TestResolveModelFallback:
         engine.write_bytes(b"not a real engine")
         dummy = self._dummy_model()
         with (
-            patch("hoverfast.trt_engine.load_engine", side_effect=RuntimeError("wrong arch")),
-            patch("hoverfast.trt_engine.load_eager_model", return_value=dummy) as mock_eager,
+            patch("hoverfast.models.trt_engine.load_engine", side_effect=RuntimeError("wrong arch")),
+            patch("hoverfast.models.trt_engine.load_eager_model", return_value=dummy) as mock_eager,
         ):
             model = trt_engine.resolve_model("model.safetensors", torch.device("cpu"), engine_path=str(engine))
         assert model is dummy
@@ -81,7 +81,7 @@ class TestResolveModelFallback:
         engine = tmp_path / "unet_trt.ts"
         engine.write_bytes(b"not a real engine")
         with (
-            patch("hoverfast.trt_engine.load_engine", side_effect=OSError("missing lib")),
+            patch("hoverfast.models.trt_engine.load_engine", side_effect=OSError("missing lib")),
             pytest.raises(RuntimeError, match="could not be loaded"),
         ):
             trt_engine.resolve_model(
@@ -92,7 +92,7 @@ class TestResolveModelFallback:
         engine = tmp_path / "unet_trt.ts"
         engine.write_bytes(b"engine")
         dummy = self._dummy_model()
-        with patch("hoverfast.trt_engine.load_engine", return_value=dummy):
+        with patch("hoverfast.models.trt_engine.load_engine", return_value=dummy):
             model = trt_engine.resolve_model("model.safetensors", torch.device("cpu"), engine_path=str(engine))
         assert model is dummy
 
@@ -100,7 +100,7 @@ class TestResolveModelFallback:
 class TestBuildEngine:
     def test_build_without_tensorrt_raises(self):
         with (
-            patch("hoverfast.trt_engine.tensorrt_available", return_value=False),
+            patch("hoverfast.models.trt_engine.tensorrt_available", return_value=False),
             pytest.raises(RuntimeError, match="TensorRT is not available"),
         ):
             trt_engine.build_engine("model.safetensors", engine_path="/tmp/x.ts")
