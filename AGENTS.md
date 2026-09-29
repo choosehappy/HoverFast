@@ -27,8 +27,7 @@ Default model: `./hoverfast_crosstissue_best_model.safetensors`. Model files are
 - Tests use `subprocess.getstatusoutput()` to invoke the `HoverFast` CLI — the package must be installed on `PATH`.
 - `tests/conftest.py` downloads a small Aperio `.svs` test image (`CMU-1.svs`) on first run (slow first invocation, cached after).
 - **GPU required for inference tests** (`test_wsi_inference`, `test_roi_inference`). Installation-only tests in `test_installation.py` are CLI smoke checks that still require GPU (importing the CLI triggers `torch.cuda.init()`).
-- `tests/unit/` directory is empty — no unit tests exist.
-- Bug: `test_train_help_works()` in `test_installation.py` calls `infer_roi -h` instead of `train -h`.
+- `tests/unit/` holds unit tests for the model, TensorRT engine, WSI post-processing, training, and I/O helpers.
 
 ## Code Quality Tools
 

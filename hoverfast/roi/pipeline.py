@@ -69,7 +69,7 @@ def load_roi(spaths: list[str]) -> list[np.ndarray]:
 
     out: list[np.ndarray] = []
     for spath in spaths:
-        region = np.asarray(Image.open(spath))
+        region = np.asarray(Image.open(spath).convert("RGB"))
         out.append(np.copy(region))
     return out
 
@@ -334,7 +334,7 @@ def region_feature_roi(
 
 
 def processing_roi(
-    regions: np.ndarray,
+    regions: list[np.ndarray],
     names: list[str],
     model: Any,
     device: torch.device,
@@ -347,7 +347,7 @@ def processing_roi(
     This function processes a batch of regions for nuclei detection using a pre-trained model.
 
     Parameters:
-    regions (numpy.ndarray): Array of regions to be processed.
+    regions (list of numpy.ndarray): List of regions to be processed.
     names (list of str): List of names corresponding to the regions.
     model (torch.nn.Module): Pre-trained model for nuclei detection.
     device (torch.device): Device to perform computation on (GPU or CPU).
@@ -356,6 +356,7 @@ def processing_roi(
     Returns:
     list: List of tuples containing output masks, feature maps, and region coordinates.
     """
+    predict = predict_roi_ihc if stain == "ihc_dab" else predict_roi
     arg_list1: list[tuple[Any, ...]] = []
     for rgs in tqdm(
         divide_batch(list(regions), batch_to_gpu),
@@ -363,12 +364,14 @@ def processing_roi(
         leave=False,
         total=math.ceil(len(regions) / batch_to_gpu),
     ):
-        if stain == "ihc_dab":
-            output_mask, maps = predict_roi_ihc(rgs, model, device)
+        if len({region.shape for region in rgs}) == 1:
+            batch = np.stack(rgs)
+            output_mask, maps = predict(batch, model, device)
+            arg_list1 += [(output_mask[j], maps[j], batch[j]) for j in range(len(output_mask))]
         else:
-            output_mask, maps = predict_roi(rgs, model, device)
-
-        arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
+            for region in rgs:
+                output_mask, maps = predict(np.asarray(region)[None], model, device)
+                arg_list1.append((output_mask[0], maps[0], region))
     return list(map(tuple.__add__, arg_list1, ((x,) for x in names)))
 
 
@@ -456,7 +459,7 @@ def infer_roi(
     width (int): Width of the contour lines.
     """
 
-    regions = np.array(multiproc_roi(load_roi, spaths, n_process))
+    regions = multiproc_roi(load_roi, spaths, n_process) or []
     names: list[str] = [os.path.basename(spath).rpartition(".")[0] for spath in spaths]
     arg_list = processing_roi(regions, names, model, device, batch_to_gpu, stain)
     multiproc_roi(

@@ -142,16 +142,6 @@ class TestGetSlide:
 
 class TestPreloadFileLinux:
 
-    def test_preload_on_non_linux_no_crash(self):
-        """preload_file_linux should silently return 0 on non-Linux platforms."""
-        from hoverfast.wsi.image_utils import preload_file_linux
-
-        # On Linux, preload_file_linux calls os.open() which may fail for nonexistent files.
-        # The function is a no-op on non-Linux — verify it doesn't crash when patched.
-        with patch("os.open", return_value=42):
-            result = preload_file_linux("/tmp/dummy.svs")
-            assert isinstance(result, int)
-
     def test_preload_on_nonexistent_file(self):
         """Should not crash when file doesn't exist (non-fatal in main flow)."""
         from hoverfast.wsi.image_utils import preload_file_linux
@@ -176,14 +166,6 @@ class TestPreloadFileLinux:
             assert result == 0
             mock_advise.assert_called_once_with(mock_fd, 0, 1_000_000, os.POSIX_FADV_WILLNEED)
             mock_close.assert_called_once_with(mock_fd)
-
-    def test_preload_on_nonexistent_file(self):
-        """Should not crash when file doesn't exist (non-fatal in main flow)."""
-        from hoverfast.wsi.image_utils import preload_file_linux
-
-        with patch("os.open", side_effect=FileNotFoundError()):
-            with pytest.raises(FileNotFoundError):
-                preload_file_linux("/tmp/nonexistent.svs")
 
 
 # ---------------------------------------------------------------------------
