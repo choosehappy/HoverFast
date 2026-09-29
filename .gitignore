@@ -1,0 +1,11 @@
+*.svs
+**/*.log
+**/*.pyc
+HoverFast.egg-info/*
+**/*.gz
+.ipynb_checkpoints/**
+benchmark_and_convert_pth_safetensor.py
+ajtest/**
+build/**
+local_dev_docs/**
+**/**.sqlite
