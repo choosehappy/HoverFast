@@ -44,9 +44,9 @@ After pulling the Docker image, you can run HoverFast using the following comman
 
 .. code-block:: sh
 
-    docker run -it --gpus all -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -o /app/output/
+    docker run -it --gpus all --shm-size=16g -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -o /app/output/
 
-This command runs HoverFast in a Docker container with GPU support, mounting the directory `/path/to/slides/` on your host to `/app` in the container, and outputs the results to the `/app/output/` directory.
+This command runs HoverFast in a Docker container with GPU support, mounting the directory `/path/to/slides/` on your host to `/app` in the container, and outputs the results to the `/app/output/` directory. The `--shm-size=16g` flag is required because `infer_wsi` uses PyTorch `DataLoader` workers that exchange tensors through shared memory; Docker's 64 MB default `/dev/shm` is too small (`--ipc=host` is an alternative).
 
 Using Singularity
 -----------------

@@ -112,6 +112,8 @@ All tasks can be run natively, with a Docker container, or with a Singularity (A
 
 For Docker, mount the directory containing your input data to `/app` (the container's working directory) and write outputs to a path inside that mount. For Singularity, the container accesses the host filesystem directly, so paths are used as-is. If you built the image locally, substitute `hoverfast:latest` for `petroslk/hoverfast:latest`.
 
+> **Shared memory (`--shm-size`).** `infer_wsi` and `train` use PyTorch `DataLoader` workers, which hand tensors to the main process through shared memory. Docker's default `/dev/shm` is only 64 MB, which is exhausted immediately and fails with `No space left on device`. Add `--shm-size=16g` (shown in those examples below) or `--ipc=host`. `build` and `infer_roi` do not use `DataLoader` and need no change. Lowering `-n/--n_process` also reduces shared-memory demand.
+
 ### Whole Slide Image Inference (`infer_wsi`)
 
 - **Basic usage (local)**
@@ -121,7 +123,7 @@ HoverFast infer_wsi path/to/slides/*.svs -o hoverfast_output
 
 - **Docker**
 ```
-docker run -it --gpus all -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/hoverfast_output
+docker run -it --gpus all --shm-size=16g -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/hoverfast_output
 ```
 
 - **Singularity**
@@ -205,7 +207,7 @@ HoverFast infer_wsi path/to/slides/*.svs -e unet_trt.ts -o hoverfast_output
 ```
 In the Docker example above the engine was written to `/app/unet_trt.ts`, i.e. `/path/to/models/unet_trt.ts` on the host. Re-mount that directory and pass the container path:
 ```
-docker run -it --gpus all -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -e /app/unet_trt.ts -o /app/hoverfast_output
+docker run -it --gpus all --shm-size=16g -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -e /app/unet_trt.ts -o /app/hoverfast_output
 ```
 The same `-e` flag is available on `infer_roi`.
 
@@ -249,7 +251,7 @@ HoverFast train data -o training_model -p /path/to/pytable_files/ -b 16 -n 20 -e
 
 - **Docker**
 ```
-docker run -it --gpus all -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -o /app/training_metrics -p /app -b 16 -n 20 -e 100
+docker run -it --gpus all --shm-size=16g -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -o /app/training_metrics -p /app -b 16 -n 20 -e 100
 ```
 
 - **Singularity**
