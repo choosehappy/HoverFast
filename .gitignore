@@ -3,6 +3,7 @@
 **/*.pyc
 HoverFast.egg-info/*
 **/*.gz
+*.ts
 .ipynb_checkpoints/**
 benchmark_and_convert_pth_safetensor.py
 ajtest/**
