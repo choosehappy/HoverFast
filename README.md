@@ -13,6 +13,22 @@ Welcome to the official repository of HoverFast, a high-performance tool designe
 
 HoverFast utilizes advanced computational methods to facilitate rapid and accurate segmentation of nuclei within large histopathological images, supporting research and diagnostics in medical imaging. For more info on the inner workings of HoverFast, do not hesitate to go over our [paper](https://joss.theoj.org/papers/10.21105/joss.07022#)
 
+## Repository Structure
+
+The `hoverfast/` package is organized by concept:
+
+```
+hoverfast/
+├── main.py       # CLI entry point (infer_wsi, infer_roi, train, build)
+├── models/       # network architecture, model loading and TensorRT engine
+├── wsi/          # whole-slide inference pipeline, post-processing and image I/O
+├── roi/          # region-of-interest inference pipeline
+├── training/     # training loop and data augmentation
+└── common/       # shared SpatiaLite and stain-deconvolution helpers
+```
+
+Comprehensive unit tests live under `tests/unit/`, with end-to-end CLI tests in `tests/`.
+
 ## Documentation
 
 An overview of the documentation is provided in this repository, but for more details, please visit the full [official documentation](https://hoverfast.readthedocs.io/en/latest/)
@@ -22,16 +38,36 @@ An overview of the documentation is provided in this repository, but for more de
 ### Prerequisites
 
 - Python 3.11.5
-- CUDA installation for GPU support (version > 12.1.0)
+- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
 
 ### Using Docker
 
 We recommend using HoverFast within a Docker or Singularity (Apptainer) container for ease of setup and compatibility.
 
-- **Pull Docker Image**
+You can either pull the pre-built image from Docker Hub or build it locally from the provided `Dockerfile`.
+
+- **Option 1: Pull the Pre-built Docker Image (recommended)**
 ```
 docker pull petroslk/hoverfast:latest
 ```
+
+The published `petroslk/hoverfast:latest` image tracks the upstream release and is built on CUDA 12.1, so it runs on older host drivers. The CUDA 13.0 toolchain described in the prerequisites requires building the image locally (Option 2).
+
+- **Option 2: Build the Docker Image from the Dockerfile**
+
+Clone the repository and build the image locally. This compiles an NVIDIA CUDA 13.0 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:
+```
+git clone https://github.com/choosehappy/HoverFast.git
+cd HoverFast
+docker build -t hoverfast:latest .
+```
+
+The build does not require a GPU (only running inference or training does), but it requires a Docker installation with BuildKit enabled. The `Dockerfile` uses BuildKit cache mounts (`--mount=type=cache`), which recent Docker versions enable by default. If your Docker daemon does not, prefix the build with `DOCKER_BUILDKIT=1`:
+```
+DOCKER_BUILDKIT=1 docker build -t hoverfast:latest .
+```
+
+Once built, use `hoverfast:latest` in place of `petroslk/hoverfast:latest` in the run commands below.
 
 ### Using Singularity
 
@@ -59,78 +95,133 @@ cd HoverFast
 pip install .
 ```
 
-## Usage
+### Verify Installation
 
-### Command Line Interface
-
-HoverFast offers a versatile CLI for processing WSIs, ROIs, and for model training.
-
-#### For Whole Slide Images (WSI) Inference
-
-- **Basic Usage**
-```
-HoverFast infer_wsi --help
-```
-- **Check Version**
+- **Check the installed version**
 ```
 HoverFast --version
 ```
 
-- **Example Command without binary masks**
+## Usage
+
+All tasks can be run natively, with a Docker container, or with a Singularity (Apptainer) container. Only the command prefix differs:
+
+| Method | Command prefix |
+|---|---|
+| Local | `HoverFast` |
+| Docker | `docker run -it --gpus all -v /path/to/data:/app petroslk/hoverfast:latest HoverFast` |
+| Singularity | `singularity exec --nv hoverfast_latest.sif HoverFast` |
+
+For Docker, mount the directory containing your input data to `/app` (the container's working directory) and write outputs to a path inside that mount. For Singularity, the container accesses the host filesystem directly, so paths are used as-is. If you built the image locally, substitute `hoverfast:latest` for `petroslk/hoverfast:latest`.
+
+> **Shared memory (`--shm-size`).** `infer_wsi` and `train` use PyTorch `DataLoader` workers, which hand tensors to the main process through shared memory. Docker's default `/dev/shm` is only 64 MB, which is exhausted immediately and fails with `No space left on device`. Add `--shm-size=16g` (shown in those examples below) or `--ipc=host`. `build` and `infer_roi` do not use `DataLoader` and need no change. Lowering `-n/--n_process` also reduces shared-memory demand.
+
+### Whole Slide Image Inference (`infer_wsi`)
+
+- **Basic usage (local)**
 ```
-HoverFast infer_wsi path/to/slides/*.svs -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output
+HoverFast infer_wsi path/to/slides/*.svs -o hoverfast_output
 ```
 
-- **Example Command with binary masks**
+- **Docker**
+```
+docker run -it --gpus all --shm-size=16g -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/hoverfast_output
+```
+
+- **Singularity**
+```
+singularity exec --nv hoverfast_latest.sif HoverFast infer_wsi path/to/slides/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o hoverfast_output
+```
+
+- **With binary masks**
 
 Although HoverFast does have a simple threshold based tissue detection, we highly recommend the use of QC tools such as HistoQC for generating tissue masks to avoid computing on artefactual regions and reducing computation time.
 You can give the path to the directory where the masks are stored. HoverFast will search for a mask with the same name as the slide with a .png extension.
 
 ```
-HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output
+HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -o hoverfast_output
 ```
 
-- **Example for IHC Nuclear DAB stain**
+- **For IHC Nuclear DAB stain**
 
 If your IHC DAB stain is nuclear, you should use the ihc_dab flag to segment nuclei. If your IHC DAB stain is not nuclear, regular H&E segmentation might be a better option.
 
 ```
-HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -m hoverfast_crosstissue_best_model.pth -n 20 -o hoverfast_output -st ihc_dab
+HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -st ihc_dab -o hoverfast_output
 ```
 
-#### For Region of Interest (ROI) Inference
+- **Using a compiled TensorRT engine**
 
-- **Example Command**
-
-```
-HoverFast infer_roi path/to/rois/*png -m hoverfast_pretrained_pannuke.pth -o hoverfast_output
-```
-
-### Using Containers
-
-Containers simplify the deployment and execution of HoverFast across different systems. We highly recommend using them!
-
-#### Docker
-
-- **Run Inference**
+Build an engine for the current GPU first (see [Building a TensorRT Engine](#building-a-tensorrt-engine-build)), then pass it with `-e`. If `-e` is omitted, `./unet_trt.ts` is used when present:
 
 ```
-docker run -it --gpus all -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi *svs -m /HoverFast/hoverfast_crosstissue_best_model.pth -o hoverfast_results
+HoverFast infer_wsi path/to/slides/*.svs -e unet_trt.ts -o hoverfast_output
 ```
 
-#### Singularity
+For the full list of arguments, see the [infer_wsi documentation](https://hoverfast.readthedocs.io/en/latest/infer_wsi.html).
 
-- **Run Inference**
+### Region of Interest Inference (`infer_roi`)
+
+- **Basic usage (local)**
+```
+HoverFast infer_roi path/to/rois/*png -o hoverfast_output
+```
+
+- **Docker**
+```
+docker run -it --gpus all -v /path/to/rois/:/app petroslk/hoverfast:latest HoverFast infer_roi /app/*png -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/hoverfast_output
+```
+
+- **Singularity**
+```
+singularity exec --nv hoverfast_latest.sif HoverFast infer_roi path/to/rois/*png -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o hoverfast_output
+```
+
+- **Using a compiled TensorRT engine**
+
+As for `infer_wsi`, pass `-e` to point at an engine built for the current GPU. If omitted, `./unet_trt.ts` is used when present:
 
 ```
-singularity exec --nv hoverfast_latest.sif HoverFast infer_wsi /path/to/wsis/*svs -m /HoverFast/hoverfast_crosstissue_best_model.pth -o hoverfast_results
+HoverFast infer_roi path/to/rois/*png -e unet_trt.ts -o hoverfast_output
 ```
 
-## Training
+For the full list of arguments, see the [infer_roi documentation](https://hoverfast.readthedocs.io/en/latest/infer_roi.html).
+
+### Building a TensorRT Engine (`build`)
+
+TensorRT engines are machine-specific and must be compiled on the GPU where inference will run. The `build` sub-command produces an engine tuned for the current GPU from a `.safetensors` model:
+
+- **Local**
+```
+HoverFast build -m hoverfast_crosstissue_best_model.safetensors -o unet_trt.ts
+```
+
+- **Docker**
+```
+docker run -it --gpus all -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast build -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/unet_trt.ts
+```
+
+Inference then picks up the engine in one of two ways:
+
+1. Point at it explicitly with `-e/--engine_path`:
+```
+HoverFast infer_wsi path/to/slides/*.svs -e unet_trt.ts -o hoverfast_output
+```
+In the Docker example above the engine was written to `/app/unet_trt.ts`, i.e. `/path/to/models/unet_trt.ts` on the host. Re-mount that directory and pass the container path:
+```
+docker run -it --gpus all --shm-size=16g -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -e /app/unet_trt.ts -o /app/hoverfast_output
+```
+The same `-e` flag is available on `infer_roi`.
+
+2. Or place the engine at `./unet_trt.ts` in the working directory and omit `-e`; that path is used by default.
+
+If no compatible engine is found, inference transparently falls back to eager PyTorch and prints a build hint, so building is optional but recommended for maximum throughput.
+
+### Training
 
 To train HoverFast on your data, you may need to generate a local dataset first using our provided container.
 
-### Generating Local Dataset
+#### Generating a Local Dataset
 
 - **Structure your data directory**
 
@@ -151,20 +242,21 @@ docker run --gpus all -it -v /path/to/dir/:/HoverFastData petroslk/data_generati
 
 This should generate two files in the directory called "data_train.pytable" and "data_test.pytable". You can use these to train the model.
 
-- **Train model**
+#### Training the Model
 
-You can use these to train the model as follows:
+The training batch size can be adjusted based on available VRAM.
 
-The training batch size can be adjusted based on available VRAM
-
+- **Local**
 ```
 HoverFast train data -o training_model -p /path/to/pytable_files/ -b 16 -n 20 -e 100
 ```
 
+- **Docker**
 ```
-docker run -it --gpus all -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -o training_metrics -p /app -b 16 -n 20 -e 100
+docker run -it --gpus all --shm-size=16g -v /path/to/pytables/:/app petroslk/hoverfast:latest HoverFast train data -o /app/training_metrics -p /app -b 16 -n 20 -e 100
 ```
 
+- **Singularity**
 ```
 singularity exec --nv hoverfast_latest.sif HoverFast train data -o training_metrics -p /path/to/pytables/ -b 16 -n 20 -e 100
 ```

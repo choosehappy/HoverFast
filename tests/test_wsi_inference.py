@@ -6,7 +6,7 @@ import pytest
 from conftest import *
 
 PRG = "HoverFast"
-MODEL_PATH = "hoverfast_crosstissue_best_model.pth"
+MODEL_PATH = "hoverfast_crosstissue_best_model.safetensors"
 ABS_PATH_MODEL = os.path.abspath(MODEL_PATH)
 SLIDE_PATH = "tests/data/"
 ABS_SLIDE_PATH = os.path.abspath(SLIDE_PATH)

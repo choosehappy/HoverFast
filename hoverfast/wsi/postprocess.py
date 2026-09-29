@@ -15,14 +15,14 @@ from shapely.validation import make_valid
 from skimage.measure import regionprops
 from skimage.segmentation import watershed
 
-from .spatialite_utils import (
+from ..common.spatialite import (
     bulk_insert_nuclei_wkb,
     configure_for_bulk_load,
     get_spatialite_connection,
     point_to_wkb,
     poly_to_wkb,
 )
-from .wsi_image_utils import save_poly
+from .image_utils import save_poly
 
 
 def pre_watershed(
@@ -64,6 +64,78 @@ def pre_watershed(
     return dist, marker, opening
 
 
+def _simplify_contour(contour: np.ndarray, tolerance: float) -> np.ndarray:
+    """Approximate a contour with fewer vertices when a tolerance is set."""
+    if tolerance == 0:
+        return contour
+    return cv2.approxPolyDP(contour, tolerance * cv2.arcLength(contour, True) / 1000, True)
+
+
+def _repair_polygon(contour: np.ndarray) -> np.ndarray | None:
+    """Return a valid single-ring contour, repairing self-intersections.
+
+    ``None`` is returned when the geometry cannot be reduced to a polygon with
+    a single boundary ring (the caller should skip such objects).
+    """
+    poly = Polygon(contour.squeeze())
+    if poly.is_valid:
+        return contour
+
+    poly = make_valid(poly)
+    for _ in range(10):
+        if poly.geom_type == "Polygon":
+            break
+        poly = poly.geoms[np.argmax([p.area for p in poly.geoms])]
+    else:
+        return None
+
+    bound = poly.boundary
+    if bound.geom_type != "LineString":
+        bound = bound.geoms[np.argmax([p.length for p in bound.geoms])]
+    return np.array(bound.coords[:], int)
+
+
+def _contour_centroid(contour: np.ndarray) -> tuple[int, int] | None:
+    """Return the integer centroid of a contour, or ``None`` for zero area."""
+    moments = cv2.moments(contour)
+    if moments["m00"] == 0:
+        return None
+    return int(moments["m10"] / moments["m00"]), int(moments["m01"] / moments["m00"])
+
+
+def centroid_in_valid_region(cx: int, cy: int, region_size: int, stride: int) -> bool:
+    """Return whether a tile-local centroid belongs to this tile's valid region.
+
+    Tiles overlap by ``stride`` pixels and are stepped by ``region_size - stride``.
+    The valid region must be *half-open* so that adjacent tiles partition the
+    plane exactly: a cell whose centroid lands on the shared margin is claimed by
+    exactly one tile, preventing the same nucleus being emitted twice in the
+    overlap. The previous closed interval kept boundary centroids in both tiles.
+    """
+    half = region_size // 2 - stride // 2
+    center = region_size // 2
+    return -half <= (cx - center) < half and -half <= (cy - center) < half
+
+
+def _format_feature(
+    coords: np.ndarray,
+    centroid: np.ndarray,
+    object_class: dict[str, Any],
+    db_output_fname: str | None,
+) -> Any:
+    """Serialize one nucleus for the JSON or SpatiaLite backend."""
+    if db_output_fname:
+        return (
+            "cell",
+            object_class["name"],
+            object_class["colorRGB"],
+            False,
+            poly_to_wkb(coords),
+            point_to_wkb((float(centroid[0]), float(centroid[1]))),
+        )
+    return ujson.dumps(save_poly(coords, centroid, object_class))
+
+
 def watershed_object(
     rg: Any,
     dist: np.ndarray,
@@ -86,61 +158,32 @@ def watershed_object(
         label = watershed(dist, markers=submarker, mask=opening)  # type: ignore[no-untyped-call]
     else:
         label = rg.image.astype(np.uint8)
-        vals = [1]
+        vals = np.array([1])
 
+    min_area = slide_data["threshold"] / slide_data["downfactor"] ** 2
     for val in vals:
         cell = np.uint8(label == val)
-        c = cv2.findContours(cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=offset)[0][0]  # type: ignore[call-overload]
+        contour = cv2.findContours(cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=offset)[0][0]  # type: ignore[call-overload]
+        contour = _simplify_contour(contour, slide_data["poly_simplification"])
 
-        if slide_data["poly_simplification"] != 0:
-            c = cv2.approxPolyDP(c, slide_data["poly_simplification"] * cv2.arcLength(c, True) / 1000, True)
-
-        if cv2.contourArea(c) <= slide_data["threshold"] / slide_data["downfactor"] ** 2:
+        if cv2.contourArea(contour) <= min_area:
             continue
 
-        poly = Polygon(c.squeeze())
-        if not poly.is_valid:
-            poly = make_valid(poly)
-            for _ in range(10):
-                if poly.geom_type == "Polygon":
-                    break
-                poly = poly.geoms[np.argmax([p.area for p in poly.geoms])]
-            else:
-                continue
-            bound = poly.boundary
-            if bound.geom_type != "LineString":
-                bound = bound.geoms[np.argmax([p.length for p in bound.geoms])]
-            c = np.array(bound.coords[:], int)
-
-        M = cv2.moments(c)
-        if M["m00"] == 0:
-            continue
-        cx = int(M["m10"] / M["m00"])
-        cy = int(M["m01"] / M["m00"])
-
-        if np.any(
-            np.abs(np.array([cx, cy]) - slide_data["region_size"] // 2)
-            > slide_data["region_size"] // 2 - slide_data["stride"] // 2
-        ):
+        contour = _repair_polygon(contour)
+        if contour is None:
             continue
 
-        coords = (c * slide_data["downfactor"]) + region_coord
-        centroid = slide_data["downfactor"] * np.array([cx, cy]) + region_coord
+        centroid = _contour_centroid(contour)
+        if centroid is None:
+            continue
+        cx, cy = centroid
 
-        if db_output_fname:
-            output.append(
-                (
-                    "cell",
-                    object_class["name"],
-                    object_class["colorRGB"],
-                    False,
-                    poly_to_wkb(coords),
-                    point_to_wkb(centroid),
-                )
-            )
-        else:
-            poly_feat = save_poly(coords, centroid, object_class)
-            output.append(ujson.dumps(poly_feat))
+        if not centroid_in_valid_region(cx, cy, slide_data["region_size"], slide_data["stride"]):
+            continue
+
+        coords = (contour * slide_data["downfactor"]) + region_coord
+        centroid_abs = slide_data["downfactor"] * np.array([cx, cy]) + region_coord
+        output.append(_format_feature(coords, centroid_abs, object_class, db_output_fname))
 
     return output
 

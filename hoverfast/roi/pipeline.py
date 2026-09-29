@@ -26,9 +26,10 @@ from skimage.measure import regionprops
 from skimage.segmentation import watershed
 from tqdm import tqdm
 
-from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
-from .utils_wsi import load_model, pre_watershed
-from .wsi_image_utils import ensure_dirs, setup_logger
+from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+from ..models.wsi_model import load_model
+from ..wsi.image_utils import ensure_dirs, setup_logger
+from ..wsi.postprocess import pre_watershed
 
 
 def int_coords(x: np.ndarray) -> np.ndarray:
@@ -68,7 +69,7 @@ def load_roi(spaths: list[str]) -> list[np.ndarray]:
 
     out: list[np.ndarray] = []
     for spath in spaths:
-        region = np.asarray(Image.open(spath))
+        region = np.asarray(Image.open(spath).convert("RGB"))
         out.append(np.copy(region))
     return out
 
@@ -247,7 +248,7 @@ def watershed_object_roi(
         label = watershed(dist, markers=submarker, mask=opening)  # type: ignore[no-untyped-call]
     else:
         label = rg.image.astype(np.uint8)
-        vals = [1]
+        vals = np.array([1])
     for val in vals:
         cell = np.uint8(label == val)
         c = cv2.findContours(cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=offset)[0][0]  # type: ignore[call-overload]
@@ -322,7 +323,7 @@ def region_feature_roi(
         for i in range(len(temp)):
             poly = temp[i]
             cv2.polylines(img, [poly], -1, color_rgb, width)  # type: ignore[call-overload]
-            cv2.fillPoly(label, [poly], len(features) + i + 1)  # type: ignore[call-overload]
+            cv2.fillPoly(label, [poly], len(features) + i + 1)
         features += [save_poly_dict(poly.astype(float)) for poly in temp]
     # save to Json
     with gzip.open(os.path.join(outdir, "json", sname + ".json.gz"), "wt", encoding="ascii") as zipfile:
@@ -333,7 +334,7 @@ def region_feature_roi(
 
 
 def processing_roi(
-    regions: np.ndarray,
+    regions: list[np.ndarray],
     names: list[str],
     model: Any,
     device: torch.device,
@@ -346,7 +347,7 @@ def processing_roi(
     This function processes a batch of regions for nuclei detection using a pre-trained model.
 
     Parameters:
-    regions (numpy.ndarray): Array of regions to be processed.
+    regions (list of numpy.ndarray): List of regions to be processed.
     names (list of str): List of names corresponding to the regions.
     model (torch.nn.Module): Pre-trained model for nuclei detection.
     device (torch.device): Device to perform computation on (GPU or CPU).
@@ -355,6 +356,7 @@ def processing_roi(
     Returns:
     list: List of tuples containing output masks, feature maps, and region coordinates.
     """
+    predict = predict_roi_ihc if stain == "ihc_dab" else predict_roi
     arg_list1: list[tuple[Any, ...]] = []
     for rgs in tqdm(
         divide_batch(list(regions), batch_to_gpu),
@@ -362,12 +364,14 @@ def processing_roi(
         leave=False,
         total=math.ceil(len(regions) / batch_to_gpu),
     ):
-        if stain == "ihc_dab":
-            output_mask, maps = predict_roi_ihc(rgs, model, device)
+        if len({region.shape for region in rgs}) == 1:
+            batch = np.stack(rgs)
+            output_mask, maps = predict(batch, model, device)
+            arg_list1 += [(output_mask[j], maps[j], batch[j]) for j in range(len(output_mask))]
         else:
-            output_mask, maps = predict_roi(rgs, model, device)
-
-        arg_list1 += [(output_mask[j], maps[j], rgs[j]) for j in range(len(output_mask))]
+            for region in rgs:
+                output_mask, maps = predict(np.asarray(region)[None], model, device)
+                arg_list1.append((output_mask[0], maps[0], region))
     return list(map(tuple.__add__, arg_list1, ((x,) for x in names)))
 
 
@@ -455,7 +459,7 @@ def infer_roi(
     width (int): Width of the contour lines.
     """
 
-    regions = np.array(multiproc_roi(load_roi, spaths, n_process))
+    regions = multiproc_roi(load_roi, spaths, n_process) or []
     names: list[str] = [os.path.basename(spath).rpartition(".")[0] for spath in spaths]
     arg_list = processing_roi(regions, names, model, device, batch_to_gpu, stain)
     multiproc_roi(
@@ -490,6 +494,7 @@ def main_roi(args: argparse.Namespace) -> None:
     outdir = args.outdir
     n_process = args.n_process
     model_path = args.model_path
+    engine_path = args.engine_path
     poly_simplify_tolerance = args.poly_simplify
     threshold = args.size_threshold
     batch_mem = args.batch_mem
@@ -508,7 +513,7 @@ def main_roi(args: argparse.Namespace) -> None:
     # load model
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
-    model: Any = load_model(model_path, device)
+    model: Any = load_model(model_path, device, engine_path=engine_path)
 
     # get input files
     if len(slide_dirs) == 1:

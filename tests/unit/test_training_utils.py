@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for training utilities (hoverfast/training_utils.py).
+"""Unit tests for training utilities (hoverfast/training/trainer.py).
 
 Covers CRITICAL ISSUES:
   C10 — Dataset reopens HDF5 file on every __getitem__
@@ -14,7 +14,7 @@ import time
 import numpy as np
 import pytest
 import torch
-from hoverfast.training_utils import (
+from hoverfast.training.trainer import (
     Criterion,
     Dataset,
     asMinutes,

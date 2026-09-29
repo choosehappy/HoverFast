@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Unit tests for the HoverFast model architecture (hoverfast/hoverfast.py)."""
+"""Unit tests for the HoverFast model architecture (hoverfast/models/hoverfast.py)."""
 
 import pytest
 import torch
-from hoverfast.hoverfast import HoverFast, MSUNetConvBlock, UNetConvBlock, UNetUpBlock
+from hoverfast.models.hoverfast import HoverFast, MSUNetConvBlock, UNetConvBlock, UNetUpBlock
 
 
 class TestUNetConvBlock:

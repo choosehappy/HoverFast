@@ -12,6 +12,7 @@ The `infer_wsi` parser allows you to configure various parameters for nuclei det
 - **-o, --outdir**: Output directory. Default is `./output/`.
 - **-b, --binmask_dir**: Quality control mask directory. Default is `None`.
 - **-m, --model_path**: Path to the pre-trained model. Default is `./hoverfast_crosstissue_best_model.pth`.
+- **-e, --engine_path**: Path to a TensorRT engine (`.ts`) compiled for the current machine (see `HoverFast build`). If omitted, `./unet_trt.ts` is used when present, otherwise eager PyTorch is used.
 - **-l, --magnification**: Magnification to work on. Default is `40`.
 - **-p, --poly_simplify**: Float representing the tolerance for simplifying the polygons. Default is `6`.
 - **-st --stain**: Staining type, choose between `he` and `ihc_dab`, default `he`.

@@ -31,6 +31,14 @@ def test_train_help_works() -> None:
     assert out.lower().startswith("usage:")
 
 
+def test_build_help_works() -> None:
+    """-h option prints help page for the TensorRT build sub-command"""
+    rv, out = getstatusoutput(f"{PRG} build -h")
+    assert rv == 0
+    assert out.lower().startswith("usage:")
+    assert "--engine_path" in out
+
+
 def test_versioning() -> None:
     """-h option prints help page"""
     rv, out = getstatusoutput(f"{PRG} --version")

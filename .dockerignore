@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dockerignore
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.vscode
+__pycache__
+*.pyc
+build
+*.egg-info
+output
+*.ts
+/models/hoverfast_output
