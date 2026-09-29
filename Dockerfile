@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Use NVIDIA's CUDA base image
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+# NVIDIA's CUDA base image. CUDA 13.0 requires a host driver >= 580.
+FROM nvidia/cuda:13.0.3-runtime-ubuntu22.04
 
 # Set non-interactive mode
 ENV DEBIAN_FRONTEND=noninteractive

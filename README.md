@@ -38,7 +38,7 @@ An overview of the documentation is provided in this repository, but for more de
 ### Prerequisites
 
 - Python 3.11.5
-- CUDA installation for GPU support (version > 12.1.0)
+- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
 
 ### Using Docker
 
@@ -53,7 +53,7 @@ docker pull petroslk/hoverfast:latest
 
 - **Option 2: Build the Docker Image from the Dockerfile**
 
-Clone the repository and build the image locally. This compiles an NVIDIA CUDA 12.1 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:
+Clone the repository and build the image locally. This compiles an NVIDIA CUDA 13.0 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:
 ```
 git clone https://github.com/choosehappy/HoverFast.git
 cd HoverFast

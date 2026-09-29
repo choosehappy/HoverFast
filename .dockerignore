@@ -10,3 +10,5 @@ __pycache__
 build
 *.egg-info
 output
+/models/unet_trt.ts
+/models/hoverfast_output

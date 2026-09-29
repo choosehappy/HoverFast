@@ -9,7 +9,7 @@ Prerequisites
 Before installing HoverFast, ensure you have the following prerequisites:
 
 - Python 3.11
-- CUDA installation for GPU support (version > 12.1.0)
+- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
 - HDF5 (available here https://www.hdfgroup.org/downloads/hdf5/)
 - Openslide (available here https://openslide.org/download/)
 
