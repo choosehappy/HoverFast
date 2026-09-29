@@ -44,10 +44,28 @@ An overview of the documentation is provided in this repository, but for more de
 
 We recommend using HoverFast within a Docker or Singularity (Apptainer) container for ease of setup and compatibility.
 
-- **Pull Docker Image**
+You can either pull the pre-built image from Docker Hub or build it locally from the provided `Dockerfile`.
+
+- **Option 1: Pull the Pre-built Docker Image (recommended)**
 ```
 docker pull petroslk/hoverfast:latest
 ```
+
+- **Option 2: Build the Docker Image from the Dockerfile**
+
+Clone the repository and build the image locally. This compiles an NVIDIA CUDA 12.1 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:
+```
+git clone https://github.com/choosehappy/HoverFast.git
+cd HoverFast
+docker build -t hoverfast:latest .
+```
+
+The build does not require a GPU (only running inference or training does), but it requires a Docker installation with BuildKit enabled. The `Dockerfile` uses BuildKit cache mounts (`--mount=type=cache`), which recent Docker versions enable by default. If your Docker daemon does not, prefix the build with `DOCKER_BUILDKIT=1`:
+```
+DOCKER_BUILDKIT=1 docker build -t hoverfast:latest .
+```
+
+Once built, use `hoverfast:latest` in place of `petroslk/hoverfast:latest` in the run commands below.
 
 ### Using Singularity
 
