@@ -9,7 +9,7 @@ Prerequisites
 Before installing HoverFast, ensure you have the following prerequisites:
 
 - Python 3.11
-- CUDA installation for GPU support (version > 12.1.0)
+- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
 - HDF5 (available here https://www.hdfgroup.org/downloads/hdf5/)
 - Openslide (available here https://openslide.org/download/)
 
@@ -37,6 +37,8 @@ To pull the latest Docker image, run the following command:
 
     docker pull petroslk/hoverfast:latest
 
+The published image is built on CUDA 12.1 and works with older host drivers. To use the CUDA 13.0 toolchain from the prerequisites, build the image locally from the repository's ``Dockerfile`` instead.
+
 Run HoverFast with Docker
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -44,9 +46,9 @@ After pulling the Docker image, you can run HoverFast using the following comman
 
 .. code-block:: sh
 
-    docker run -it --gpus all -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -o /app/output/
+    docker run -it --gpus all --shm-size=16g -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -o /app/output/
 
-This command runs HoverFast in a Docker container with GPU support, mounting the directory `/path/to/slides/` on your host to `/app` in the container, and outputs the results to the `/app/output/` directory.
+This command runs HoverFast in a Docker container with GPU support, mounting the directory `/path/to/slides/` on your host to `/app` in the container, and outputs the results to the `/app/output/` directory. The `--shm-size=16g` flag is required because `infer_wsi` uses PyTorch `DataLoader` workers that exchange tensors through shared memory; Docker's 64 MB default `/dev/shm` is too small (`--ipc=host` is an alternative).
 
 Using Singularity
 -----------------

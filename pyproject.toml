@@ -17,7 +17,7 @@ select = [
 ]
 ignore = [
     "E501",   # line length handled by ruff format
-    "F403",   # star imports (used in augment.py, training_utils.py)
+    "F403",   # star imports (used in augment.py, trainer.py)
     "F405",   # may be undefined from star imports
     "N802",   # function name should be lowercase (HED/minutes naming convention)
     "N803",   # argument name should be lowercase

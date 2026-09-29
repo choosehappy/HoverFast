@@ -52,6 +52,13 @@ def get_args() -> argparse.Namespace:
         default="./hoverfast_crosstissue_best_model.safetensors",
         type=str,
     )
+    infer_wsi_parser.add_argument(
+        "-e",
+        "--engine_path",
+        help="path to a TensorRT engine (.ts) compiled for this machine; if omitted, ./unet_trt.ts is used when present",
+        default=None,
+        type=str,
+    )
     infer_wsi_parser.add_argument("-l", "--magnification", help="magnification to work on", default=40, type=float)
     infer_wsi_parser.add_argument(
         "-p",
@@ -102,6 +109,13 @@ def get_args() -> argparse.Namespace:
         "--model_path",
         help="path to pre-trained model",
         default="./hoverfast_crosstissue_best_model.safetensors",
+        type=str,
+    )
+    infer_roi_parser.add_argument(
+        "-e",
+        "--engine_path",
+        help="path to a TensorRT engine (.ts) compiled for this machine; if omitted, ./unet_trt.ts is used when present",
+        default=None,
         type=str,
     )
     infer_roi_parser.add_argument(
@@ -185,6 +199,28 @@ def get_args() -> argparse.Namespace:
         type=int,
     )
 
+    ########### BUILD PARSER
+
+    build_parser = subparsers.add_parser("build", help="Compile a TensorRT engine tuned for the current GPU/machine")
+    build_parser.add_argument(
+        "-m",
+        "--model_path",
+        help="path to the pre-trained model used to build the engine",
+        default="./hoverfast_crosstissue_best_model.safetensors",
+        type=str,
+    )
+    build_parser.add_argument(
+        "-o",
+        "--engine_path",
+        help="output path of the compiled TensorRT engine",
+        default="unet_trt.ts",
+        type=str,
+    )
+    build_parser.add_argument("--min_batch", help="minimum dynamic batch size", default=1, type=int)
+    build_parser.add_argument("--opt_batch", help="optimal dynamic batch size", default=7, type=int)
+    build_parser.add_argument("--max_batch", help="maximum dynamic batch size", default=16, type=int)
+    build_parser.add_argument("--workspace_gb", help="TensorRT workspace size in GB", default=8, type=int)
+
     args = parser.parse_args()
 
     return args
@@ -193,22 +229,27 @@ def get_args() -> argparse.Namespace:
 def main() -> None:
     args = get_args()
     if args.mode == "infer_wsi":
-        from .utils_wsi import main_wsi
+        from .wsi.pipeline import main_wsi
 
         main_wsi(args)
 
     elif args.mode == "infer_roi":
-        from .utils_roi import main_roi
+        from .roi.pipeline import main_roi
 
         main_roi(args)
 
     elif args.mode == "train":
-        from .training_utils import main_train
+        from .training.trainer import main_train
 
         main_train(args)
 
+    elif args.mode == "build":
+        from .models.trt_engine import build_main
+
+        build_main(args)
+
     else:
-        raise ValueError("Please pick one of the following options: infer_wsi, infer_roi, train.")
+        raise ValueError("Please pick one of the following options: infer_wsi, infer_roi, train, build.")
 
 
 if __name__ == "__main__":

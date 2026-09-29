@@ -91,6 +91,7 @@ class TestArgValidation:
         assert result[0] == 0, "Help should succeed"
         assert "--magnification" in result[1], "Should have magnification flag"
         assert "--stain" in result[1], "Should have stain flag"
+        assert "--engine_path" in result[1], "Should have engine_path flag"
 
     def test_infer_roi_defaults_sane(self):
         """Verify that infer_roi defaults are sane via CLI help."""
@@ -99,6 +100,7 @@ class TestArgValidation:
         result = subprocess.getstatusoutput("HoverFast infer_roi -h")
         assert result[0] == 0, "Help should succeed"
         assert "--stain" in result[1], "Should have stain flag"
+        assert "--engine_path" in result[1], "Should have engine_path flag"
 
     def test_train_defaults_sane(self):
         """Verify that train subcommand exists."""
@@ -133,7 +135,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.utils_wsi.main_wsi") as mock_fn:
+             patch("hoverfast.wsi.pipeline.main_wsi") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "infer_wsi"
@@ -146,7 +148,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.utils_roi.main_roi") as mock_fn:
+             patch("hoverfast.roi.pipeline.main_roi") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "infer_roi"
@@ -159,7 +161,7 @@ class TestMainDispatch:
 
         mock_args = FakeArgs()
         with patch("hoverfast.main.get_args", return_value=mock_args), \
-             patch("hoverfast.training_utils.main_train") as mock_fn:
+             patch("hoverfast.training.trainer.main_train") as mock_fn:
             main()
             assert mock_fn.call_count == 1
             assert mock_fn.call_args[0][0].mode == "train"

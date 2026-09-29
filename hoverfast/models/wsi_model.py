@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import os
 from importlib.util import find_spec
 from typing import Any
 
 import numpy as np
 import openslide
-import safetensors.torch
 import torch
-from safetensors import safe_open
 from torch.utils.data import Dataset
-
-from .hoverfast import HoverFast
 
 
 def _find_tensorrt_libs() -> tuple[str, str]:
-    """Dynamically locate TensorRT runtime libraries."""
+    """Dynamically locate TensorRT runtime libraries.
+
+    Kept here (rather than in :mod:`hoverfast.models.trt_engine`) for backwards
+    compatibility: existing code and tests import it from this module.
+    """
     spec = find_spec("torch_tensorrt")
     if spec and spec.origin:
         torch_trt_dir = os.path.dirname(spec.origin)  # site-packages/torch_tensorrt
@@ -29,73 +28,37 @@ def _find_tensorrt_libs() -> tuple[str, str]:
         # C3 fix: Use sys.prefix instead of hardcoded /opt/conda path
         import sys
 
-        site_packages = os.path.join(sys.prefix, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
+        site_packages = os.path.join(
+            sys.prefix, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages"
+        )
         trt_lib = os.path.join(site_packages, "torch_tensorrt", "lib", "libtorchtrt_runtime.so")
         nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
     return nvinfer_base, trt_lib
 
 
-def load_model(model_path: str, device: torch.device) -> Any:
-    """Load the pre-trained model from the given path."""
-    # C2 fix: Validate that the model file exists before attempting to load
+def load_model(
+    model_path: str,
+    device: torch.device,
+    engine_path: str | None = None,
+    allow_eager_fallback: bool = True,
+) -> Any:
+    """Load a runnable HoverFast model.
+
+    Prefers a compiled TensorRT engine and transparently falls back to eager
+    PyTorch (with an explicit build hint) when the engine is missing or was
+    compiled for a different machine. See :func:`hoverfast.models.trt_engine.resolve_model`.
+    """
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    if not os.path.exists("unet_trt.ts"):
-        print("not compiled - building")
-        with safe_open(model_path, framework="pt") as f:
-            metadata = f.metadata()
-            config = json.loads(metadata["config"])
+    from .trt_engine import resolve_model
 
-        model = HoverFast(**config).to(device, memory_format=torch.channels_last)  # type: ignore[call-overload]
-        safetensors.torch.load_model(model, model_path)
-        model = model.half()
-        model.eval()
-
-        import torch_tensorrt
-
-        batch = torch.export.Dim("batch", min=1, max=16)
-
-        example_input = torch.randn(7, 3, 1024, 1024, device="cuda", dtype=torch.float16)
-        dynamic_shapes = {"x": {0: batch}}
-
-        exp_program = torch.export.export(
-            model,
-            (example_input,),
-            dynamic_shapes=dynamic_shapes,
-        )
-
-        trt_model = torch_tensorrt.dynamo.compile(
-            exp_program,
-            inputs=[
-                torch_tensorrt.Input(
-                    min_shape=(1, 3, 1024, 1024),
-                    opt_shape=(7, 3, 1024, 1024),
-                    max_shape=(16, 3, 1024, 1024),
-                    dtype=torch.half,
-                )
-            ],
-            enabled_precisions={torch.half},
-            optimization_level=5,
-            workspace_size=8 << 30,
-            use_python_runtime=False,
-        )
-
-        torch_tensorrt.save(trt_model, "unet_trt.ts", inputs=[example_input], output_format="torchscript")
-
-        del example_input
-        torch.cuda.empty_cache()
-    else:
-        print("loading compiled..")
-        import ctypes
-
-        nvinfer_path, trt_runtime_path = _find_tensorrt_libs()
-        ctypes.CDLL(nvinfer_path, mode=ctypes.RTLD_GLOBAL)
-        torch.ops.load_library(trt_runtime_path)  # type: ignore[no-untyped-call]
-        trt_model = torch.jit.load("unet_trt.ts")  # type: ignore[no-untyped-call]
-
-    print("returning model")
-    return trt_model
+    return resolve_model(
+        model_path,
+        device,
+        engine_path=engine_path,
+        allow_eager_fallback=allow_eager_fallback,
+    )
 
 
 class WSIPatchDataset(Dataset):
@@ -129,7 +92,7 @@ class WSIPatchDataset(Dataset):
         if self.slide_data["working_d"] != self.slide_data["downfactor"]:
             region = region.resize((self.slide_data["region_size"],) * 2)
 
-        from .wsi_image_utils import rgba2rgb
+        from ..wsi.image_utils import rgba2rgb
 
         img = rgba2rgb(region)
         img_np = np.array(img)
@@ -140,7 +103,7 @@ class WSIPatchDataset(Dataset):
 
 def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     """Perform nuclei detection with stain deconvolution on a batch of regions."""
-    from .utils_stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+    from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 
     # C6 fix: Ensure float16 dtype for stain deconv (cached tensors are float16)
     if regions_gpu.dtype != torch.float16:
@@ -155,10 +118,7 @@ def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.devic
     output_processed = output.argmax(axis=1).type(torch.bool)
 
     # Quantize maps to float8 for faster GPU-to-CPU transfer.
-    if device.type == "cuda":
-        maps_out = maps.to(torch.float8_e4m3fn)
-    else:
-        maps_out = maps
+    maps_out = maps.to(torch.float8_e4m3fn) if device.type == "cuda" else maps
 
     return output_processed, maps_out
 
@@ -170,9 +130,6 @@ def predict_batch(regions_gpu: torch.Tensor, model: Any) -> tuple[torch.Tensor, 
 
     # Quantize maps to float8 for faster GPU-to-CPU transfer (halves bandwidth from ~20MB to ~10MB per batch).
     # Post-processing converts back to float32; mean absolute error on roundtrip is ~0.018, negligible for watershed.
-    if regions_gpu.device.type == "cuda":
-        maps_out = maps.to(torch.float8_e4m3fn)
-    else:
-        maps_out = maps
+    maps_out = maps.to(torch.float8_e4m3fn) if regions_gpu.device.type == "cuda" else maps
 
     return output_processed, maps_out

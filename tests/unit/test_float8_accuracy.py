@@ -91,7 +91,7 @@ class TestPredictBatchCpuPath:
 
     def test_predict_batch_cpu_no_crash(self):
         """predict_batch should work on CPU without CUDA-specific code paths."""
-        from hoverfast.wsi_model import predict_batch
+        from hoverfast.models.wsi_model import predict_batch
 
         # NCHW format: (batch, channels, height, width)
         regions_gpu = torch.rand(2, 3, 256, 256) / 255.0
@@ -106,7 +106,7 @@ class TestPredictBatchCpuPath:
     @pytest.mark.xfail(reason="Stain deconv dtype mismatch (float vs Half) — pre-existing bug")
     def test_predict_ihc_batch_cpu_no_crash(self):
         """predict_ihc_batch should work on CPU without CUDA-specific code paths."""
-        from hoverfast.wsi_model import predict_ihc_batch
+        from hoverfast.models.wsi_model import predict_ihc_batch
 
         # NHWC format: (batch, height, width, channels) — what stain deconv expects
         regions_gpu = torch.rand(2, 256, 256, 3) / 255.0
@@ -126,7 +126,7 @@ class TestPredictBatchCpuPath:
 class TestWSIPatchDataset:
 
     def test_len_matches_coords(self):
-        from hoverfast.wsi_model import WSIPatchDataset
+        from hoverfast.models.wsi_model import WSIPatchDataset
 
         coords = [[0, 0], [100, 100], [200, 200]]
         slide_data = {
@@ -145,7 +145,7 @@ class TestWSIPatchDataset:
         assert len(ds) == 3
 
     def test_len_empty_coords(self):
-        from hoverfast.wsi_model import WSIPatchDataset
+        from hoverfast.models.wsi_model import WSIPatchDataset
 
         ds = WSIPatchDataset([], {"fpath": "/tmp", "sname": "x", "format": "svs"})
         assert len(ds) == 0
@@ -160,7 +160,7 @@ class TestLoadModelMissingFile:
     @pytest.mark.xfail(reason="C2: load_model silently falls back to torch.jit.load on missing file")
     def test_missing_safetensors_raises_file_not_found(self):
         """load_model() must raise FileNotFoundError when the .safetensors file is absent."""
-        from hoverfast.wsi_model import load_model
+        from hoverfast.models.wsi_model import load_model
 
         with pytest.raises(FileNotFoundError, match="not found|does not exist"):
             load_model("/nonexistent/path/to/model.safetensors", torch.device("cpu"))
@@ -174,20 +174,20 @@ class TestFindTensorRtLibs:
 
     def test_returns_paths_when_torch_tensorrt_missing(self):
         """_find_tensorrt_libs should not crash when torch_tensorrt is absent."""
-        from hoverfast.wsi_model import _find_tensorrt_libs
+        from hoverfast.models.wsi_model import _find_tensorrt_libs
         from unittest.mock import MagicMock, patch
 
-        with patch("hoverfast.wsi_model.find_spec", return_value=None):
+        with patch("hoverfast.models.wsi_model.find_spec", return_value=None):
             nvinfer_path, trt_lib = _find_tensorrt_libs()
             assert isinstance(nvinfer_path, str)
             assert isinstance(trt_lib, str)
 
     def test_returns_paths_when_torch_tensorrt_present(self):
-        from hoverfast.wsi_model import _find_tensorrt_libs
+        from hoverfast.models.wsi_model import _find_tensorrt_libs
         from unittest.mock import MagicMock, patch
 
         fake_spec = MagicMock(origin="/some/path/torch_tensorrt/__init__.py")
-        with patch("hoverfast.wsi_model.find_spec", return_value=fake_spec):
+        with patch("hoverfast.models.wsi_model.find_spec", return_value=fake_spec):
             nvinfer_path, trt_lib = _find_tensorrt_libs()
             assert isinstance(nvinfer_path, str)
             assert isinstance(trt_lib, str)
