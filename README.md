@@ -51,6 +51,8 @@ You can either pull the pre-built image from Docker Hub or build it locally from
 docker pull petroslk/hoverfast:latest
 ```
 
+The published `petroslk/hoverfast:latest` image tracks the upstream release and is built on CUDA 12.1, so it runs on older host drivers. The CUDA 13.0 toolchain described in the prerequisites requires building the image locally (Option 2).
+
 - **Option 2: Build the Docker Image from the Dockerfile**
 
 Clone the repository and build the image locally. This compiles an NVIDIA CUDA 13.0 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:

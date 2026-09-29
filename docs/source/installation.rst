@@ -37,6 +37,8 @@ To pull the latest Docker image, run the following command:
 
     docker pull petroslk/hoverfast:latest
 
+The published image is built on CUDA 12.1 and works with older host drivers. To use the CUDA 13.0 toolchain from the prerequisites, build the image locally from the repository's ``Dockerfile`` instead.
+
 Run HoverFast with Docker
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
