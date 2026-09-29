@@ -146,6 +146,14 @@ If your IHC DAB stain is nuclear, you should use the ihc_dab flag to segment nuc
 HoverFast infer_wsi path/to/slides/*.svs -b path/to/masks/ -st ihc_dab -o hoverfast_output
 ```
 
+- **Using a compiled TensorRT engine**
+
+Build an engine for the current GPU first (see [Building a TensorRT Engine](#building-a-tensorrt-engine-build)), then pass it with `-e`. If `-e` is omitted, `./unet_trt.ts` is used when present:
+
+```
+HoverFast infer_wsi path/to/slides/*.svs -e unet_trt.ts -o hoverfast_output
+```
+
 For the full list of arguments, see the [infer_wsi documentation](https://hoverfast.readthedocs.io/en/latest/infer_wsi.html).
 
 ### Region of Interest Inference (`infer_roi`)
@@ -165,11 +173,19 @@ docker run -it --gpus all -v /path/to/rois/:/app petroslk/hoverfast:latest Hover
 singularity exec --nv hoverfast_latest.sif HoverFast infer_roi path/to/rois/*png -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o hoverfast_output
 ```
 
+- **Using a compiled TensorRT engine**
+
+As for `infer_wsi`, pass `-e` to point at an engine built for the current GPU. If omitted, `./unet_trt.ts` is used when present:
+
+```
+HoverFast infer_roi path/to/rois/*png -e unet_trt.ts -o hoverfast_output
+```
+
 For the full list of arguments, see the [infer_roi documentation](https://hoverfast.readthedocs.io/en/latest/infer_roi.html).
 
 ### Building a TensorRT Engine (`build`)
 
-TensorRT engines are machine-specific and must be compiled on the GPU where inference will run. The `build` sub-command produces an engine tuned for the current GPU:
+TensorRT engines are machine-specific and must be compiled on the GPU where inference will run. The `build` sub-command produces an engine tuned for the current GPU from a `.safetensors` model:
 
 - **Local**
 ```
@@ -180,6 +196,20 @@ HoverFast build -m hoverfast_crosstissue_best_model.safetensors -o unet_trt.ts
 ```
 docker run -it --gpus all -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast build -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -o /app/unet_trt.ts
 ```
+
+Inference then picks up the engine in one of two ways:
+
+1. Point at it explicitly with `-e/--engine_path`:
+```
+HoverFast infer_wsi path/to/slides/*.svs -e unet_trt.ts -o hoverfast_output
+```
+In the Docker example above the engine was written to `/app/unet_trt.ts`, i.e. `/path/to/models/unet_trt.ts` on the host. Re-mount that directory and pass the container path:
+```
+docker run -it --gpus all -v /path/to/models/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -m /HoverFast/hoverfast_crosstissue_best_model.safetensors -e /app/unet_trt.ts -o /app/hoverfast_output
+```
+The same `-e` flag is available on `infer_roi`.
+
+2. Or place the engine at `./unet_trt.ts` in the working directory and omit `-e`; that path is used by default.
 
 If no compatible engine is found, inference transparently falls back to eager PyTorch and prints a build hint, so building is optional but recommended for maximum throughput.
 

@@ -29,8 +29,6 @@ import torch
 
 #: Default file name of the compiled TensorRT engine (matches historical name).
 DEFAULT_ENGINE_NAME = "unet_trt.ts"
-#: Environment variable that overrides the engine location.
-ENGINE_ENV_VAR = "HOVERFAST_TRT_ENGINE"
 
 DEFAULT_MIN_BATCH = 1
 DEFAULT_OPT_BATCH = 7
@@ -40,11 +38,6 @@ DEFAULT_WORKSPACE_BYTES = 8 << 30
 #: Model tensor shape expected by the exported graph (N, C, H, W).
 _INPUT_CHANNELS = 3
 _INPUT_SIZE = 1024
-
-
-def _engine_path_from_env(default: str | None = None) -> str:
-    """Return the engine path, honouring ``HOVERFAST_TRT_ENGINE`` if set."""
-    return os.environ.get(ENGINE_ENV_VAR) or default or DEFAULT_ENGINE_NAME
 
 
 def tensorrt_available() -> bool:
@@ -186,7 +179,7 @@ def build_engine(
             "PyTorch/CUDA build, then re-run `HoverFast build`."
         )
 
-    engine_path = _engine_path_from_env(engine_path)
+    engine_path = engine_path or DEFAULT_ENGINE_NAME
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if opt_batch > max_batch:
@@ -223,7 +216,10 @@ def build_engine(
 
 
 def _build_hint(model_path: str, engine_path: str) -> str:
-    return f"To build an engine for this machine run:\n    HoverFast build -m {model_path} -o {engine_path}"
+    return (
+        f"To build an engine for this machine run:\n    HoverFast build -m {model_path} -o {engine_path}\n"
+        f"Then point inference at it with `-e {engine_path}`."
+    )
 
 
 def resolve_model(
@@ -233,6 +229,9 @@ def resolve_model(
     allow_eager_fallback: bool = True,
 ) -> Any:
     """Return a runnable model, preferring the compiled TensorRT engine.
+
+    ``engine_path`` defaults to :data:`DEFAULT_ENGINE_NAME` (``unet_trt.ts`` in
+    the current working directory) when not given.
 
     Resolution order:
 
@@ -245,7 +244,7 @@ def resolve_model(
     ``allow_eager_fallback=False`` turns the mismatch into a ``RuntimeError``
     so callers can enforce TensorRT explicitly.
     """
-    engine_path = _engine_path_from_env(engine_path)
+    engine_path = engine_path or DEFAULT_ENGINE_NAME
 
     if os.path.exists(engine_path):
         try:

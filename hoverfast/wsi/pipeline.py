@@ -391,6 +391,7 @@ def main_wsi(args: argparse.Namespace) -> None:
     region_size: int = args.tile_size
     n_process: int | None = args.n_process
     model_path: str = args.model_path
+    engine_path: str | None = args.engine_path
     poly_simplify_tolerance: float = args.poly_simplify
     threshold: float = args.size_threshold
     stain: str = args.stain
@@ -412,7 +413,7 @@ def main_wsi(args: argparse.Namespace) -> None:
     preload_file_linux(slide_dirs[0])
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model: torch.nn.Module = load_model(model_path, device)
+    model: torch.nn.Module = load_model(model_path, device, engine_path=engine_path)
 
     stats: dict[str, list[Any]] = {}
     for si, slide_dir in enumerate(slide_dirs):

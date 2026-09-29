@@ -491,6 +491,7 @@ def main_roi(args: argparse.Namespace) -> None:
     outdir = args.outdir
     n_process = args.n_process
     model_path = args.model_path
+    engine_path = args.engine_path
     poly_simplify_tolerance = args.poly_simplify
     threshold = args.size_threshold
     batch_mem = args.batch_mem
@@ -509,7 +510,7 @@ def main_roi(args: argparse.Namespace) -> None:
     # load model
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
-    model: Any = load_model(model_path, device)
+    model: Any = load_model(model_path, device, engine_path=engine_path)
 
     # get input files
     if len(slide_dirs) == 1:

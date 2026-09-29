@@ -30,14 +30,16 @@ class TestTensorrtAvailable:
             assert trt_engine.tensorrt_available() is False
 
 
-class TestEnginePathEnv:
-    def test_env_var_overrides_default(self, monkeypatch):
-        monkeypatch.setenv("HOVERFAST_TRT_ENGINE", "/tmp/custom.ts")
-        assert trt_engine._engine_path_from_env("unet_trt.ts") == "/tmp/custom.ts"
-
-    def test_default_used_without_env(self, monkeypatch):
-        monkeypatch.delenv("HOVERFAST_TRT_ENGINE", raising=False)
-        assert trt_engine._engine_path_from_env("unet_trt.ts") == "unet_trt.ts"
+class TestEnginePathDefault:
+    def test_default_engine_name_used_when_none(self, tmp_path, monkeypatch):
+        """With no engine_path, resolve_model looks for DEFAULT_ENGINE_NAME in cwd."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / trt_engine.DEFAULT_ENGINE_NAME).write_bytes(b"engine")
+        dummy = MagicMock(spec=torch.nn.Module)
+        with patch("hoverfast.models.trt_engine.load_engine", return_value=dummy) as mock_load:
+            model = trt_engine.resolve_model("model.safetensors", torch.device("cpu"))
+        assert model is dummy
+        mock_load.assert_called_once_with(trt_engine.DEFAULT_ENGINE_NAME)
 
 
 class TestResolveModelFallback:

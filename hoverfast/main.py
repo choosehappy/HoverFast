@@ -52,6 +52,13 @@ def get_args() -> argparse.Namespace:
         default="./hoverfast_crosstissue_best_model.safetensors",
         type=str,
     )
+    infer_wsi_parser.add_argument(
+        "-e",
+        "--engine_path",
+        help="path to a TensorRT engine (.ts) compiled for this machine; if omitted, ./unet_trt.ts is used when present",
+        default=None,
+        type=str,
+    )
     infer_wsi_parser.add_argument("-l", "--magnification", help="magnification to work on", default=40, type=float)
     infer_wsi_parser.add_argument(
         "-p",
@@ -102,6 +109,13 @@ def get_args() -> argparse.Namespace:
         "--model_path",
         help="path to pre-trained model",
         default="./hoverfast_crosstissue_best_model.safetensors",
+        type=str,
+    )
+    infer_roi_parser.add_argument(
+        "-e",
+        "--engine_path",
+        help="path to a TensorRT engine (.ts) compiled for this machine; if omitted, ./unet_trt.ts is used when present",
+        default=None,
         type=str,
     )
     infer_roi_parser.add_argument(

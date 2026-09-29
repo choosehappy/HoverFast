@@ -91,6 +91,7 @@ class TestArgValidation:
         assert result[0] == 0, "Help should succeed"
         assert "--magnification" in result[1], "Should have magnification flag"
         assert "--stain" in result[1], "Should have stain flag"
+        assert "--engine_path" in result[1], "Should have engine_path flag"
 
     def test_infer_roi_defaults_sane(self):
         """Verify that infer_roi defaults are sane via CLI help."""
@@ -99,6 +100,7 @@ class TestArgValidation:
         result = subprocess.getstatusoutput("HoverFast infer_roi -h")
         assert result[0] == 0, "Help should succeed"
         assert "--stain" in result[1], "Should have stain flag"
+        assert "--engine_path" in result[1], "Should have engine_path flag"
 
     def test_train_defaults_sane(self):
         """Verify that train subcommand exists."""
