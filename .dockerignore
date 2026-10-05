@@ -1,14 +1,17 @@
 .git
 .gitignore
 .dockerignore
-.mypy_cache
-.pytest_cache
-.ruff_cache
+# patterns without **/ only match at the top of the build context
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
 .vscode
-__pycache__
-*.pyc
+**/__pycache__
+**/*.pyc
 build
-*.egg-info
+**/*.egg-info
 output
-*.ts
+**/*.ts
 /models/hoverfast_output
+# slides (incl. the test slide that tests/conftest.py downloads)
+**/*.svs

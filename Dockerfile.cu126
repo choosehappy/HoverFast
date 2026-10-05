@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+#
+# HoverFast with plain PyTorch (CUDA 12.6), no TensorRT. Runs on CUDA 12 drivers (>= 525).
+# On a driver >= 580, the default Dockerfile (PyTorch + TensorRT) is about 1.5x faster.
+#
+#   docker build -f Dockerfile.cu126 -t hoverfast:cu126 .
+#
+# Python comes from Ubuntu; PyTorch brings its own CUDA libraries, so the small CUDA "base"
+# image is enough (it still refuses to start on a driver that is too old).
+
+# ---------------------------------------------------------------- build stage
+FROM nvidia/cuda:12.6.3-base-ubuntu24.04 AS build
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 python3-venv && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300 UV_LINK_MODE=copy
+RUN python3 -m venv /opt/venv && pip install --no-cache-dir uv
+
+WORKDIR /HoverFast
+COPY requirements.txt ./
+# PyTorch for CUDA 12.6 from the PyTorch index, then the rest from PyPI.
+# Triton is only used by torch.compile, which HoverFast does not use.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install "torch==2.14.1" --index-url https://download.pytorch.org/whl/cu126 && \
+    uv pip install -r requirements.txt && \
+    uv pip uninstall triton
+
+COPY ./ ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-deps . && \
+    pip uninstall -y uv
+
+# ---------------------------------------------------------------- final image
+FROM nvidia/cuda:12.6.3-base-ubuntu24.04
+ENV DEBIAN_FRONTEND=noninteractive
+# libsqlite3-mod-spatialite: SpatiaLite output (-d); uses the same system SQLite as Python.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 libsqlite3-mod-spatialite ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /HoverFast /HoverFast
+ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH
+
+# Check the install without a GPU.
+RUN python - <<'EOF'
+import cv2
+import torch
+from hoverfast.common.spatialite import spatialite_available
+
+print("torch", torch.__version__, "| CUDA", torch.version.cuda, "| opencv", cv2.__version__)
+assert spatialite_available(), "mod_spatialite not loadable"
+EOF
+
+WORKDIR /app

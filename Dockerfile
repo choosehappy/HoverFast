@@ -1,58 +1,66 @@
 # syntax=docker/dockerfile:1
+#
+# HoverFast with PyTorch + TensorRT (CUDA 13.0): the fastest image. Needs an NVIDIA driver >= 580.
+# For older (CUDA 12) drivers use Dockerfile.cu126, which runs plain PyTorch.
+#
+#   docker build -t hoverfast:latest .
+#
+# Python comes from Ubuntu; PyTorch and TensorRT bring their own CUDA libraries, so the small
+# CUDA "base" image is enough (it still refuses to start on a driver that is too old).
 
-# NVIDIA's CUDA base image. CUDA 13.0 requires a host driver >= 580.
-FROM nvidia/cuda:13.0.3-runtime-ubuntu22.04
-
-# Set non-interactive mode
+# ---------------------------------------------------------------- build stage
+FROM nvidia/cuda:13.0.3-base-ubuntu24.04 AS build
 ENV DEBIAN_FRONTEND=noninteractive
-
-# System update and install basic tools
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    software-properties-common wget bzip2 git ninja-build \
-    vim nano libjpeg-dev libcairo2-dev libgdk-pixbuf2.0-dev libglib2.0-dev \
-    libxml2-dev sqlite3 libopenjp2-7-dev libtiff-dev libsqlite3-dev libhdf5-dev libgl1-mesa-glx \
-    spatialite-bin libsqlite3-mod-spatialite build-essential && \
-    apt-get clean && \
+    apt-get install -y --no-install-recommends python3 python3-venv && \
     rm -rf /var/lib/apt/lists/*
 
-# Install latest openslide version
-RUN add-apt-repository ppa:openslide/openslide && \
-    apt-get install -y openslide-tools && \
-    rm -rf /var/lib/apt/lists/*
+ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300 UV_LINK_MODE=copy
+RUN python3 -m venv /opt/venv && pip install --no-cache-dir uv
 
-# Install Miniconda
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-py38_4.12.0-Linux-x86_64.sh -O ~/miniconda.sh && \
-    /bin/bash ~/miniconda.sh -b -p /opt/conda && \
-    rm ~/miniconda.sh && \
-    /opt/conda/bin/conda clean -tipsy && \
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    echo "conda activate base" >> ~/.bashrc
-
-ENV PATH=/opt/conda/bin:$PATH
-
-# Install Python 3.11 using Conda
-RUN conda install -c anaconda python=3.11.5
-
-# Install conda packages
-RUN conda install -c anaconda hdf5
-RUN conda install -c conda-forge libstdcxx-ng
-
-# This line removes local apt repo and makes container more compact
-RUN rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies first so this heavy layer is cached unless
-# requirements.txt changes (the source tree changes on every build).
 WORKDIR /HoverFast
-COPY requirements.txt ./
+COPY requirements.txt requirements-tensorrt.txt ./
+# torch 2.14.1 on PyPI is the CUDA 13.0 build; requirements-tensorrt.txt pins the matching TensorRT.
+# Then drop what HoverFast never uses: Triton (torch.compile only) and TensorRT's builder
+# resources for Windows targets.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    pip install uv && \
-    uv pip install -r requirements.txt --system
+    uv pip install "torch==2.14.1" && \
+    uv pip install -r requirements.txt -r requirements-tensorrt.txt && \
+    uv pip uninstall triton && \
+    rm -f /opt/venv/lib/python3*/site-packages/tensorrt_libs/*_win_*
 
-# Install the HoverFast package itself (dependencies already present above).
 COPY ./ ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --no-deps . --system
+    uv pip install --no-deps . && \
+    pip uninstall -y uv
+
+# ---------------------------------------------------------------- final image
+FROM nvidia/cuda:13.0.3-base-ubuntu24.04
+ENV DEBIAN_FRONTEND=noninteractive
+# libsqlite3-mod-spatialite: SpatiaLite output (-d); uses the same system SQLite as Python.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 libsqlite3-mod-spatialite ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /HoverFast /HoverFast
+ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH
+
+# Check the install without a GPU: SpatiaLite loads, OpenCV imports, and TensorRT's libraries are
+# where HoverFast loads them from (otherwise inference would silently fall back to eager PyTorch).
+RUN python - <<'EOF'
+import os
+
+import cv2
+import torch
+from hoverfast.common.spatialite import spatialite_available
+from hoverfast.models.wsi_model import _find_tensorrt_libs
+
+print("torch", torch.__version__, "| CUDA", torch.version.cuda, "| opencv", cv2.__version__)
+assert spatialite_available(), "mod_spatialite not loadable"
+missing = [p for p in _find_tensorrt_libs() if not os.path.isfile(p)]
+assert not missing, f"TensorRT libraries missing: {missing}"
+print("TensorRT libraries OK")
+EOF
 
 WORKDIR /app
