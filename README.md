@@ -37,37 +37,50 @@ An overview of the documentation is provided in this repository, but for more de
 
 ### Prerequisites
 
-- Python 3.11.5
-- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
+- Python 3.9 to 3.12 (3.11 recommended; TensorRT acceleration needs 3.10 or newer)
+- An NVIDIA GPU and driver. No CUDA toolkit, system OpenSlide or HDF5 is needed; they come with the Python packages.
+
+### Speed and compatibility
+
+HoverFast runs in plain PyTorch everywhere. TensorRT is optional and gives the maximum speed, but needs a recent driver:
+
+| Setup | NVIDIA driver | Speed vs. HoverFast 1.0 |
+|---|---|---|
+| PyTorch + TensorRT (CUDA 13) | >= 580 | about 3.9× |
+| PyTorch only, CUDA 13 | >= 580 | about 2.5× |
+| PyTorch only, CUDA 12.6 | >= 525 (CUDA 12 drivers) | about 2.5× |
+
+Speeds were measured on 8 whole-slide images on an RTX A5000. If you are not sure which driver you have, run `nvidia-smi`: the "Driver Version" must be at least the number in the table.
 
 ### Using Docker
 
 We recommend using HoverFast within a Docker or Singularity (Apptainer) container for ease of setup and compatibility.
 
-You can either pull the pre-built image from Docker Hub or build it locally from the provided `Dockerfile`.
+There are two images. Pick the one that matches your NVIDIA driver (`nvidia-smi` shows the "Driver Version"):
 
-- **Option 1: Pull the Pre-built Docker Image (recommended)**
+| Image | Dockerfile | Contents | NVIDIA driver |
+|---|---|---|---|
+| `petroslk/hoverfast:latest` | `Dockerfile` | PyTorch + TensorRT, CUDA 13.0 (fastest) | >= 580 |
+| `petroslk/hoverfast:cu126` | `Dockerfile.cu126` | PyTorch only, CUDA 12.6 | >= 525 |
+
+The TensorRT image will not start on a driver older than 580; Docker then reports `unsatisfied condition: cuda>=13.0`. Use the `cu126` image instead.
+
+- **Option 1: Pull a pre-built image (recommended)**
 ```
-docker pull petroslk/hoverfast:latest
+docker pull petroslk/hoverfast:latest     # or: petroslk/hoverfast:cu126
 ```
 
-The published `petroslk/hoverfast:latest` image tracks the upstream release and is built on CUDA 12.1, so it runs on older host drivers. The CUDA 13.0 toolchain described in the prerequisites requires building the image locally (Option 2).
-
-- **Option 2: Build the Docker Image from the Dockerfile**
-
-Clone the repository and build the image locally. This compiles an NVIDIA CUDA 13.0 runtime image, installs the Python dependencies and the HoverFast package, and tags the result `hoverfast:latest`:
+- **Option 2: Build an image from its Dockerfile**
 ```
 git clone https://github.com/choosehappy/HoverFast.git
 cd HoverFast
-docker build -t hoverfast:latest .
+docker build -t hoverfast:latest .                        # PyTorch + TensorRT
+docker build -f Dockerfile.cu126 -t hoverfast:cu126 .     # PyTorch only
 ```
 
-The build does not require a GPU (only running inference or training does), but it requires a Docker installation with BuildKit enabled. The `Dockerfile` uses BuildKit cache mounts (`--mount=type=cache`), which recent Docker versions enable by default. If your Docker daemon does not, prefix the build with `DOCKER_BUILDKIT=1`:
-```
-DOCKER_BUILDKIT=1 docker build -t hoverfast:latest .
-```
+The build does not require a GPU (only running inference or training does), but it requires a Docker installation with BuildKit enabled. The Dockerfiles use BuildKit cache mounts (`--mount=type=cache`), which recent Docker versions enable by default. If your Docker daemon does not, prefix the build with `DOCKER_BUILDKIT=1`.
 
-Once built, use `hoverfast:latest` in place of `petroslk/hoverfast:latest` in the run commands below.
+Once built, use your local tag in place of `petroslk/hoverfast:latest` in the run commands below. To use TensorRT, build an engine inside the container once per machine, see [Building a TensorRT Engine](#building-a-tensorrt-engine-build).
 
 ### Using Singularity
 
@@ -75,7 +88,7 @@ For systems that support Singularity (Apptainer), you can pull the HoverFast con
 
 - **Pull Singularity Container**
 ```
-singularity pull docker://petroslk/hoverfast:latest
+singularity pull docker://petroslk/hoverfast:latest     # or: docker://petroslk/hoverfast:cu126
 ```
 
 ### Local Installation with Conda
@@ -93,6 +106,25 @@ conda activate HoverFast
 git clone https://github.com/choosehappy/HoverFast.git
 cd HoverFast
 pip install .
+```
+
+This runs inference in plain PyTorch. OpenSlide comes from the `openslide-bin` package, so no system OpenSlide or C compiler is needed.
+
+pip installs the default PyTorch build from PyPI, which currently targets CUDA 13 and needs a driver >= 580. With an older (CUDA 12) driver, install PyTorch for CUDA 12.6 first, then HoverFast:
+```
+pip install torch --index-url https://download.pytorch.org/whl/cu126
+pip install .
+```
+
+- **Optional: TensorRT for maximum speed** (needs a driver >= 580)
+```
+pip install ".[tensorrt]"
+```
+This installs the pinned TensorRT stack from `requirements-tensorrt.txt` (torch 2.14, torch-tensorrt 2.14, TensorRT 11.1). Then build an engine for your GPU, see [Building a TensorRT Engine](#building-a-tensorrt-engine-build).
+
+- **Optional: SpatiaLite output** (`infer_wsi -d`) needs the `mod_spatialite` SQLite extension, which pip cannot install:
+```
+conda install -c conda-forge libspatialite    # or: sudo apt install libsqlite3-mod-spatialite
 ```
 
 ### Verify Installation
@@ -115,6 +147,8 @@ All tasks can be run natively, with a Docker container, or with a Singularity (A
 For Docker, mount the directory containing your input data to `/app` (the container's working directory) and write outputs to a path inside that mount. For Singularity, the container accesses the host filesystem directly, so paths are used as-is. If you built the image locally, substitute `hoverfast:latest` for `petroslk/hoverfast:latest`.
 
 > **Shared memory (`--shm-size`).** `infer_wsi` and `train` use PyTorch `DataLoader` workers, which hand tensors to the main process through shared memory. Docker's default `/dev/shm` is only 64 MB, which is exhausted immediately and fails with `No space left on device`. Add `--shm-size=16g` (shown in those examples below) or `--ipc=host`. `build` and `infer_roi` do not use `DataLoader` and need no change. Lowering `-n/--n_process` also reduces shared-memory demand.
+
+> **Running as your own user (`--user`).** Containers run as root by default, so output files are owned by root. To write them as yourself, add `--user $(id -u):$(id -g) -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=/tmp`. The `/etc/passwd` mount is required for TensorRT: `torch-tensorrt` looks up the current user at import and fails with `KeyError: 'getpwuid(): uid not found'` for a user ID the image does not know. Singularity maps your user automatically and needs none of this.
 
 ### Whole Slide Image Inference (`infer_wsi`)
 
@@ -276,7 +310,7 @@ Then, you can just run the following command inside the HoverFast repo:
 ```
 pytest -vv
 ```
-Note that the first time you run these, the infer_wsi test can take longer since the slide will be downloaded locally
+Note that the first time you run these, the infer_wsi test can take longer since the slide will be downloaded locally. Run pytest from the environment HoverFast is installed in, since some tests call the `HoverFast` command. TensorRT and SpatiaLite tests are skipped when those optional components are not installed.
 
 For more detailed instructions, including setting up your environment and running specific tests, please refer to the [testing documentation](https://hoverfast.readthedocs.io/en/latest/unit_testing.html)
 

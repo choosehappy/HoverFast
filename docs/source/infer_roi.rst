@@ -10,7 +10,7 @@ The `infer_roi` parser allows you to configure various parameters for nuclei det
 
 - **slide_folder** (positional argument): Input filename pattern.
 - **-o, --outdir**: Output directory. Default is `./output/`.
-- **-m, --model_path**: Path to the pre-trained model. Default is `./hoverfast_crosstissue_best_model.pth`.
+- **-m, --model_path**: Path to the pre-trained model (`.safetensors` or `.pth`). Default is `./hoverfast_crosstissue_best_model.safetensors`.
 - **-e, --engine_path**: Path to a TensorRT engine (`.ts`) compiled for the current machine (see `HoverFast build`). If omitted, `./unet_trt.ts` is used when present, otherwise eager PyTorch is used.
 - **-p, --poly_simplify**: Float representing the tolerance for simplifying the polygons. Default is `6`.
 - **-s, --size_threshold**: Minimum size threshold for nuclei area in square micrometers. Default is `85`.

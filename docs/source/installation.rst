@@ -8,10 +8,33 @@ Prerequisites
 
 Before installing HoverFast, ensure you have the following prerequisites:
 
-- Python 3.11
-- CUDA installation for GPU support (host driver >= 580; the Docker image is built on CUDA 13.0)
-- HDF5 (available here https://www.hdfgroup.org/downloads/hdf5/)
-- Openslide (available here https://openslide.org/download/)
+- Python 3.9 to 3.12 (3.11 recommended; TensorRT acceleration needs 3.10 or newer)
+- An NVIDIA GPU and driver. The PyTorch wheels ship their own CUDA runtime, so no CUDA toolkit is needed.
+
+OpenSlide and HDF5 are installed automatically as Python packages (``openslide-bin`` and ``tables``); no system libraries are required.
+
+Speed and Compatibility
+^^^^^^^^^^^^^^^^^^^^^^^
+
+HoverFast runs in plain PyTorch everywhere. TensorRT is optional and gives the maximum speed, but needs a recent driver:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Setup
+     - NVIDIA driver
+     - Speed vs. HoverFast 1.0
+   * - PyTorch + TensorRT (CUDA 13)
+     - >= 580
+     - about 3.9x
+   * - PyTorch only, CUDA 13
+     - >= 580
+     - about 2.5x
+   * - PyTorch only, CUDA 12.6
+     - >= 525 (CUDA 12 drivers)
+     - about 2.5x
+
+Speeds were measured on 8 whole-slide images on an RTX A5000. Run ``nvidia-smi`` to see your driver version.
 
 Using Docker
 ------------
@@ -31,13 +54,40 @@ For GPU support in Docker, you also need to install NVIDIA Container Toolkit. Fo
 Pull Docker Image
 ^^^^^^^^^^^^^^^^^^^
 
-To pull the latest Docker image, run the following command:
+There are two images. Pick the one that matches your NVIDIA driver (``nvidia-smi`` shows the "Driver Version"):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Image
+     - Dockerfile
+     - Contents
+     - NVIDIA driver
+   * - ``petroslk/hoverfast:latest``
+     - ``Dockerfile``
+     - PyTorch + TensorRT, CUDA 13.0 (fastest)
+     - >= 580
+   * - ``petroslk/hoverfast:cu126``
+     - ``Dockerfile.cu126``
+     - PyTorch only, CUDA 12.6
+     - >= 525
 
 .. code-block:: sh
 
-    docker pull petroslk/hoverfast:latest
+    docker pull petroslk/hoverfast:latest     # or: petroslk/hoverfast:cu126
 
-The published image is built on CUDA 12.1 and works with older host drivers. To use the CUDA 13.0 toolchain from the prerequisites, build the image locally from the repository's ``Dockerfile`` instead.
+The TensorRT image will not start on a driver older than 580; Docker then reports ``unsatisfied condition: cuda>=13.0``. Use the ``cu126`` image instead.
+
+To build an image yourself instead of pulling it:
+
+.. code-block:: sh
+
+    git clone https://github.com/choosehappy/HoverFast.git
+    cd HoverFast
+    docker build -t hoverfast:latest .                        # PyTorch + TensorRT
+    docker build -f Dockerfile.cu126 -t hoverfast:cu126 .     # PyTorch only
+
+The TensorRT build fails if the TensorRT libraries are not usable. To use TensorRT, build an engine inside the container once per machine with ``HoverFast build`` and pass it to inference with ``-e``.
 
 Run HoverFast with Docker
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -49,6 +99,8 @@ After pulling the Docker image, you can run HoverFast using the following comman
     docker run -it --gpus all --shm-size=16g -v /path/to/slides/:/app petroslk/hoverfast:latest HoverFast infer_wsi /app/*.svs -o /app/output/
 
 This command runs HoverFast in a Docker container with GPU support, mounting the directory `/path/to/slides/` on your host to `/app` in the container, and outputs the results to the `/app/output/` directory. The `--shm-size=16g` flag is required because `infer_wsi` uses PyTorch `DataLoader` workers that exchange tensors through shared memory; Docker's 64 MB default `/dev/shm` is too small (`--ipc=host` is an alternative).
+
+Containers run as root by default, so output files are owned by root. To write them as your own user, add ``--user $(id -u):$(id -g) -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=/tmp``. The ``/etc/passwd`` mount is required for TensorRT, because ``torch-tensorrt`` looks up the current user at import and fails with ``KeyError: 'getpwuid(): uid not found'`` otherwise. Singularity maps your user automatically.
 
 Using Singularity
 -----------------
@@ -66,7 +118,7 @@ To pull the Singularity container, run the following command:
 
 .. code-block:: sh
 
-    singularity pull docker://petroslk/hoverfast:latest
+    singularity pull docker://petroslk/hoverfast:latest     # or: docker://petroslk/hoverfast:cu126
 
 Run HoverFast with Singularity
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -99,21 +151,6 @@ First, create and activate a Conda environment for HoverFast:
     conda create -n HoverFast python=3.11
     conda activate HoverFast
 
-Install CUDA Toolkit
-^^^^^^^^^^^^^^^^^^^^^
-
-If you plan to use GPU support, install the CUDA toolkit. Follow the instructions on the NVIDIA CUDA Toolkit website (https://developer.nvidia.com/cuda-downloads) to install the appropriate version for your system.
-
-Install HDF5 and Openslide
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To install the required dependencies HDF5 and Openslide, run the following commands:
-
-.. code-block:: sh
-
-    conda install -c anaconda hdf5
-    conda install -c conda-forge openslide
-
 Install HoverFast
 ^^^^^^^^^^^^^^^^^
 
@@ -124,6 +161,35 @@ Next, clone the HoverFast repository and install it:
     git clone https://github.com/choosehappy/HoverFast.git
     cd HoverFast
     pip install .
+
+This runs inference in plain PyTorch. pip installs the default PyTorch build from PyPI, which currently targets CUDA 13 and needs a driver >= 580. With an older (CUDA 12) driver, install PyTorch for CUDA 12.6 first, then HoverFast:
+
+.. code-block:: sh
+
+    pip install torch --index-url https://download.pytorch.org/whl/cu126
+    pip install .
+
+Optional: TensorRT for Maximum Speed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+TensorRT makes inference about 1.5x faster than plain PyTorch (about 3.9x faster than HoverFast 1.0). It needs an NVIDIA driver >= 580. Install the pinned TensorRT stack (torch 2.14, torch-tensorrt 2.14, TensorRT 11.1, listed in ``requirements-tensorrt.txt``):
+
+.. code-block:: sh
+
+    pip install ".[tensorrt]"
+
+Then build an engine for your GPU with ``HoverFast build`` and pass it to inference with ``-e``. Engines are specific to the GPU, driver and TensorRT version they were built with.
+
+Optional: SpatiaLite Output
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Writing a SpatiaLite database instead of JSON (``infer_wsi -d``) needs the ``mod_spatialite`` SQLite extension, which pip cannot install:
+
+.. code-block:: sh
+
+    conda install -c conda-forge libspatialite
+
+On Ubuntu without Conda, use ``sudo apt install libsqlite3-mod-spatialite`` instead.
 
 Verify Installation
 ^^^^^^^^^^^^^^^^^^^
@@ -158,25 +224,17 @@ If you prefer to install HoverFast without using Conda and are on a Linux Ubuntu
         python -m venv venv
         source venv/bin/activate
 
-3. Install HDF5 and Openslide:
-
-    .. code-block:: sh
-
-        apt-get install libhdf5-serial-dev
-        apt-get install openslide-tools
-
-4. Install the required dependencies:
-
-    .. code-block:: sh
-
-        pip install -r requirements.txt
-
-
-5. Install HoverFast:
+3. Install HoverFast (add ``[tensorrt]`` for TensorRT acceleration, see above):
 
     .. code-block:: sh
 
         pip install .
+
+4. Optional, only for SpatiaLite output (``infer_wsi -d``):
+
+    .. code-block:: sh
+
+        sudo apt install libsqlite3-mod-spatialite
 
 
 Version
@@ -195,11 +253,16 @@ If you encounter issues during installation, here are some common solutions:
 
 CUDA Not Detected
 
-Ensure that your CUDA installation is correctly configured and that your GPU drivers are up to date. You can verify the CUDA installation by running:
+Ensure that your NVIDIA driver is installed and up to date, then check that PyTorch can see the GPU:
 
 .. code-block:: sh
 
-    nvcc --version
+    nvidia-smi
+    python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+
+TensorRT Engine Not Used
+
+If inference prints ``Falling back to eager PyTorch``, the engine could not be loaded. Check that you installed ``pip install ".[tensorrt]"`` (not unpinned ``tensorrt``/``torch-tensorrt`` packages), and rebuild the engine with ``HoverFast build`` on the machine where inference runs.
 
 Dependency Conflicts
 

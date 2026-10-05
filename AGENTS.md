@@ -6,9 +6,10 @@ GPU-only nuclear segmentation tool for whole-slide pathology images (WSIs). PyTo
 
 ## Setup & Install
 
-- **Environment**: Conda (base env). Use `source /opt/conda/etc/profile.d/conda.sh && conda activate base` before running anything. Python interpreter is `/opt/conda/bin/python`.
-- **Python >= 3.9** required. CUDA ≥ 12.1.0 mandatory — `torch.cuda.init()` runs at import time in `hoverfast/main.py:7`, so any code path that imports `main` will fail without a GPU.
-- Install: `pip install .` from repo root (reads `requirements.txt`). Dockerfile uses `uv pip install . --system`.
+- **Environment**: In the Docker image, Python 3.12 lives in a virtual environment at `/opt/venv`, which is first on `PATH` (no activation needed; `python` is `/opt/venv/bin/python`). Locally, any Python 3.9–3.12 environment works.
+- **Python 3.9–3.12** (TensorRT extra: 3.10–3.12). An NVIDIA GPU is mandatory: driver ≥ 580 for the default CUDA 13 torch and TensorRT, ≥ 525 with torch from the `cu126` index (no TensorRT) — `torch.cuda.init()` runs at import time in `hoverfast/main.py:7`, so any code path that imports `main` will fail without a GPU.
+- Install: `pip install .` from repo root (reads `requirements.txt`). TensorRT is an optional extra: `pip install ".[tensorrt]"` installs the pinned stack in `requirements-tensorrt.txt` (torch-tensorrt and tensorrt must stay in lockstep with torch). Two Dockerfiles, both multi-stage on the small `nvidia/cuda:*-base-ubuntu24.04` image with Ubuntu's Python 3.12 in `/opt/venv` and apt `libsqlite3-mod-spatialite`: `Dockerfile` (CUDA 13.0, torch + `requirements-tensorrt.txt`, image `petroslk/hoverfast:latest`) and `Dockerfile.cu126` (torch from the `cu126` index, no TensorRT, image `petroslk/hoverfast:cu126`). Both uninstall Triton (only used by torch.compile); the TensorRT image also deletes TensorRT's Windows builder resources. A final build step fails if SpatiaLite or (TensorRT image) the TensorRT libraries are not usable.
+- OpenSlide and HDF5 come from wheels (`openslide-bin`, `tables`). SpatiaLite output (`-d`) needs the system `mod_spatialite` extension; `hoverfast/common/spatialite.py` raises a `RuntimeError` with install instructions when it is missing.
 - Docker image: `petroslk/hoverfast:latest`. Container working dir is `/app`; source lives at `/HoverFast/`.
 
 ## CLI Modes
@@ -25,7 +26,8 @@ Default model: `./hoverfast_crosstissue_best_model.safetensors`. Model files are
 
 - Run all tests: `pytest -vv` (from repo root).
 - Tests use `subprocess.getstatusoutput()` to invoke the `HoverFast` CLI — the package must be installed on `PATH`.
-- `tests/conftest.py` downloads a small Aperio `.svs` test image (`CMU-1.svs`) on first run (slow first invocation, cached after).
+- `tests/conftest.py` downloads a small Aperio `.svs` test image (`CMU-1.svs`) from the OpenSlide test-data server on first run (slow first invocation, cached after).
+- TensorRT and SpatiaLite tests skip when those optional components are absent.
 - **GPU required for inference tests** (`test_wsi_inference`, `test_roi_inference`). Installation-only tests in `test_installation.py` are CLI smoke checks that still require GPU (importing the CLI triggers `torch.cuda.init()`).
 - `tests/unit/` holds unit tests for the model, TensorRT engine, WSI post-processing, training, and I/O helpers.
 

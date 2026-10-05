@@ -46,6 +46,10 @@ Once your environment is set up, you can run the tests. Ensure that your GPU is 
 Special Considerations
 ----------------------
 
+- **The** ``HoverFast`` **command must be on your PATH.** Several tests run the CLI in a subprocess, so activate the environment HoverFast is installed in before running ``pytest``.
+- **Test slide download.** The first run downloads ``CMU-1.svs`` (about 170 MB) from the OpenSlide test-data server into ``tests/data/``.
+- **Optional components are skipped, not failed.** The TensorRT library check is skipped when TensorRT is not installed (``pip install ".[tensorrt]"``), and the SpatiaLite database tests are skipped when the ``mod_spatialite`` extension is missing.
+
 Since most tests require GPU support, it is important to ensure that your environment is properly configured to utilize the GPU. This includes having the appropriate CUDA version installed and ensuring that your system recognizes the GPU.
 
 - **Check GPU Availability**:
