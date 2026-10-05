@@ -7,17 +7,38 @@ from typing import Any
 
 import numpy as np
 
+SPATIALITE_INSTALL_HINT = (
+    "SpatiaLite output (-d/--db_output) needs the mod_spatialite SQLite extension, which pip cannot install. "
+    "Install it with `conda install -c conda-forge libspatialite` or `sudo apt install libsqlite3-mod-spatialite`, "
+    "or leave out -d to write JSON output instead."
+)
+
 
 def get_spatialite_connection(db_path: str) -> sqlite3.Connection:
     """
     Open a connection to a (Spatia)Lite DB with mod_spatialite loaded.
+
+    Raises ``RuntimeError`` with install instructions when the extension is missing.
     """
     conn = sqlite3.connect(db_path)
     conn.enable_load_extension(True)
     # name varies by platform: 'mod_spatialite', 'mod_spatialite.so', 'mod_spatialite.dylib'
-    conn.load_extension("mod_spatialite")
+    try:
+        conn.load_extension("mod_spatialite")
+    except sqlite3.OperationalError as exc:
+        conn.close()
+        raise RuntimeError(f"{SPATIALITE_INSTALL_HINT} ({exc})") from exc
     conn.enable_load_extension(False)
     return conn
+
+
+def spatialite_available() -> bool:
+    """Return ``True`` when the mod_spatialite extension can be loaded."""
+    try:
+        get_spatialite_connection(":memory:").close()
+    except RuntimeError:
+        return False
+    return True
 
 
 def poly_to_wkb(poly: np.ndarray) -> bytes:

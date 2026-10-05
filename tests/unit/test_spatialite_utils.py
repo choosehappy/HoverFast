@@ -19,7 +19,11 @@ from hoverfast.common.spatialite import (
     init_spatialite_db_deferred_index,
     point_to_wkb,
     poly_to_wkb,
+    spatialite_available,
 )
+
+# Tests that open a database need the mod_spatialite extension (a system library pip cannot install).
+requires_spatialite = pytest.mark.skipif(not spatialite_available(), reason="mod_spatialite extension not installed")
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +72,7 @@ class TestPointToWkb:
         assert y == 0.0
 
 
+@requires_spatialite
 class TestSpatiaLiteConnection:
     def test_get_connection(self):
         with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as f:
@@ -141,6 +146,7 @@ class TestSpatiaLiteConnection:
 # C1 / T7: SQL injection — srid type validation
 # ---------------------------------------------------------------------------
 
+@requires_spatialite
 class TestSridValidation:
 
     def test_non_int_srid_raises_type_error(self):
@@ -225,6 +231,7 @@ class TestSridValidation:
 # Bulk insert rollback on failure
 # ---------------------------------------------------------------------------
 
+@requires_spatialite
 class TestBulkInsertRollback:
 
     def test_rollback_on_sql_error(self):
@@ -271,6 +278,7 @@ class TestBulkInsertRollback:
 # Empty records list handling
 # ---------------------------------------------------------------------------
 
+@requires_spatialite
 class TestEmptyRecords:
 
     def test_empty_records_no_crash(self):
@@ -290,3 +298,17 @@ class TestEmptyRecords:
         finally:
             if os.path.exists(db_path):
                 os.remove(db_path)
+
+
+class TestMissingSpatialite:
+    def test_missing_extension_raises_with_install_hint(self):
+        """Without mod_spatialite the user gets install instructions, not a bare OperationalError."""
+        import sqlite3
+        from unittest.mock import MagicMock, patch
+
+        fake_conn = MagicMock()
+        fake_conn.load_extension.side_effect = sqlite3.OperationalError("mod_spatialite.so: cannot open shared object file")
+        with patch("hoverfast.common.spatialite.sqlite3.connect", return_value=fake_conn):
+            with pytest.raises(RuntimeError, match="libspatialite"):
+                get_spatialite_connection(":memory:")
+        fake_conn.close.assert_called_once()

@@ -235,3 +235,20 @@ class TestMagnificationFromMpp:
 
         mag = magnification_from_mpp(0.01)
         assert mag > 40.0
+
+
+class TestOpenFeatureSink:
+    def test_db_connection_closed_before_pool_fork(self, tmp_path):
+        """The SpatiaLite connection opened to initialise the DB must be closed before the
+        post-processing pool forks; a connection carried across fork() corrupted the DB
+        ("database disk image is malformed") when a TensorRT engine was loaded."""
+        from hoverfast.wsi import pipeline
+
+        fake_conn = MagicMock()
+        with (
+            patch.object(pipeline, "get_spatialite_connection", return_value=fake_conn),
+            patch.object(pipeline, "configure_for_bulk_load"),
+            patch.object(pipeline, "init_spatialite_db_deferred_index"),
+        ):
+            assert pipeline._open_feature_sink(str(tmp_path), "s", str(tmp_path / "s.sqlite")) == (None, None)
+        fake_conn.close.assert_called_once()

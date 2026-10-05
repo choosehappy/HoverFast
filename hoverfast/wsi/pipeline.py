@@ -172,8 +172,13 @@ def _open_feature_sink(outdir: str, sname: str, db_output_fname: str | None) -> 
     """
     if db_output_fname:
         conn = get_spatialite_connection(db_output_fname)
-        configure_for_bulk_load(conn)
-        init_spatialite_db_deferred_index(conn, srid=0)
+        try:
+            configure_for_bulk_load(conn)
+            init_spatialite_db_deferred_index(conn, srid=0)
+        finally:
+            # Close before the post-processing pool forks: SQLite connections must not be
+            # carried across fork(), and workers open their own connections.
+            conn.close()
         return None, None
 
     features_queue = multiprocessing.Manager().Queue()
