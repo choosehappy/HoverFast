@@ -136,3 +136,34 @@ class TestFindTensorRtLibs:
             nvinfer_path, trt_lib = _find_tensorrt_libs()
             assert isinstance(nvinfer_path, str)
             assert isinstance(trt_lib, str)
+
+    @pytest.mark.parametrize("major", ["10", "11"])
+    def test_nvinfer_plugin_major_is_discovered(self, tmp_path, major):
+        """The plugin soname follows the installed TensorRT major version, not a hard-coded one."""
+        from hoverfast.models.wsi_model import _find_nvinfer_plugin
+
+        (tmp_path / f"libnvinfer_plugin.so.{major}").touch()
+        (tmp_path / f"libnvinfer_plugin.so.{major}.1.0").touch()  # full-version file is ignored
+        assert _find_nvinfer_plugin(str(tmp_path)) == str(tmp_path / f"libnvinfer_plugin.so.{major}")
+
+    def test_nvinfer_plugin_highest_major_wins(self, tmp_path):
+        from hoverfast.models.wsi_model import _find_nvinfer_plugin
+
+        (tmp_path / "libnvinfer_plugin.so.10").touch()
+        (tmp_path / "libnvinfer_plugin.so.11").touch()
+        assert _find_nvinfer_plugin(str(tmp_path)).endswith("libnvinfer_plugin.so.11")
+
+    def test_libraries_exist_when_tensorrt_installed(self):
+        """With TensorRT installed, the paths handed to ctypes/torch must exist.
+
+        Guards against the runtime falling back to eager PyTorch because the
+        library lookup and the installed TensorRT version disagree.
+        """
+        from hoverfast.models.trt_engine import tensorrt_available
+        from hoverfast.models.wsi_model import _find_tensorrt_libs
+
+        if not tensorrt_available():
+            pytest.skip("TensorRT not installed")
+        nvinfer_path, trt_lib = _find_tensorrt_libs()
+        assert os.path.isfile(nvinfer_path), nvinfer_path
+        assert os.path.isfile(trt_lib), trt_lib

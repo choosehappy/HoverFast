@@ -23,7 +23,6 @@ def _find_tensorrt_libs() -> tuple[str, str]:
         torch_trt_dir = os.path.dirname(spec.origin)  # site-packages/torch_tensorrt
         site_packages = os.path.dirname(torch_trt_dir)
         trt_lib = os.path.join(torch_trt_dir, "lib", "libtorchtrt_runtime.so")
-        nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
     else:
         # C3 fix: Use sys.prefix instead of hardcoded /opt/conda path
         import sys
@@ -32,8 +31,25 @@ def _find_tensorrt_libs() -> tuple[str, str]:
             sys.prefix, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages"
         )
         trt_lib = os.path.join(site_packages, "torch_tensorrt", "lib", "libtorchtrt_runtime.so")
-        nvinfer_base = os.path.join(site_packages, "tensorrt_libs", "libnvinfer_plugin.so.11")
+    nvinfer_base = _find_nvinfer_plugin(os.path.join(site_packages, "tensorrt_libs"))
     return nvinfer_base, trt_lib
+
+
+def _find_nvinfer_plugin(tensorrt_libs_dir: str) -> str:
+    """Return the ``libnvinfer_plugin.so.<major>`` shipped by the installed TensorRT wheel.
+
+    The soname carries the TensorRT major version (``.so.10``, ``.so.11``, ...), so it is
+    discovered rather than hard-coded. Falls back to the TensorRT 11 name when nothing is
+    found, so the caller's error message still points at the expected location.
+    """
+    import glob
+    import re
+
+    candidates = glob.glob(os.path.join(tensorrt_libs_dir, "libnvinfer_plugin.so.*"))
+    majors = [c for c in candidates if re.fullmatch(r"libnvinfer_plugin\.so\.\d+", os.path.basename(c))]
+    if majors:
+        return max(majors, key=lambda c: int(c.rsplit(".", 1)[1]))
+    return os.path.join(tensorrt_libs_dir, "libnvinfer_plugin.so.11")
 
 
 def load_model(
