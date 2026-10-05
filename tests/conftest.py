@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 # openslide aperio test images
-IMAGES_BASE_URL = "https://data.cytomine.coop/open/openslide/aperio-svs/"
+IMAGES_BASE_URL = "https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/"
 
 
 def md5(fn):

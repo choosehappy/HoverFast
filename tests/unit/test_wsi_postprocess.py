@@ -53,7 +53,8 @@ class TestPreWatershed:
     def test_marker_has_labels(self):
         output_mask = np.zeros((64, 64), dtype=np.uint8)
         output_mask[10:30, 10:30] = 1
-        maps = [np.random.rand(64, 64).astype(np.float32)] * 2
+        # seeded: with unseeded noise ~6% of draws yield a single marker label and the test flakes
+        maps = [np.random.default_rng(0).random((64, 64)).astype(np.float32)] * 2
         _, marker, _ = pre_watershed(output_mask, maps)
         unique_labels = np.unique(marker)
         assert len(unique_labels) >= 2
