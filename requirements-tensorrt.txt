@@ -1,0 +1,6 @@
+# Optional TensorRT acceleration (`pip install ".[tensorrt]"`; installed in the Docker image).
+# These three versions must move together: torch-tensorrt 2.14 requires torch 2.14.x and
+# TensorRT 11.1.x. Left unpinned, pip resolves to an older torch-tensorrt/TensorRT 10 stack.
+# The torch 2.14 PyPI wheels target CUDA 13.0 and need an NVIDIA driver >= 580.
+torch-tensorrt==2.14.0
+tensorrt==11.1.0.106

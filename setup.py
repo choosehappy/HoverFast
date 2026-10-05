@@ -6,6 +6,9 @@ with open("README.md", encoding="utf-8") as fh:
 with open("requirements.txt", encoding="utf-8") as rq:
     requirements = rq.readlines()
 
+with open("requirements-tensorrt.txt", encoding="utf-8") as rq:
+    requirements_tensorrt = [line for line in rq.read().splitlines() if line and not line.startswith("#")]
+
 setup(
     # Library name
     name="HoverFast",
@@ -23,6 +26,8 @@ setup(
     url="https://github.com/petroslk/HoverFast",
 
     install_requires=requirements,
+
+    extras_require={"tensorrt": requirements_tensorrt},
 
     packages=find_packages(),
 
