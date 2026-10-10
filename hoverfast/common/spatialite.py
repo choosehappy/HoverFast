@@ -123,50 +123,59 @@ def build_row_wkb(
     )
 
 
+def build_row_wkb(
+    poly: np.ndarray,
+    centroid: tuple[float, float],
+    object_class: dict[str, Any],
+) -> tuple[str, str, int, bool, bytes, bytes]:
+    return (
+        "cell",
+        object_class["name"],
+        object_class["colorRGB"],
+        False,
+        poly_to_wkb(poly),  # bytes -> bound as BLOB
+        point_to_wkb(centroid),  # bytes -> bound as BLOB
+    )
+
+
 def bulk_insert_nuclei_wkb(
     conn: sqlite3.Connection,
     records: list[tuple[str, str, int, bool, bytes, bytes]],
     srid: int = 0,
-    batch_size: int = 50_000,
 ) -> None:
-    # C1 fix: Validate srid type — prevent SQL injection via f-string interpolation
     if not isinstance(srid, int) or isinstance(srid, bool):
         raise TypeError(f"srid must be an integer, got {type(srid).__name__}")
+
+    if not records:
+        return
 
     insert_sql = f"""
         INSERT INTO nuclei
             (object_type, classification_name, classification_color,
              is_locked, geom, centroid)
         VALUES
-            (?, ?, ?, ?, GeomFromWKB(?, {srid}), GeomFromWKB(?, {srid}))
+            (?, ?, ?, ?,
+             CompressGeometry(GeomFromWKB(?, {srid})),
+             CompressGeometry(GeomFromWKB(?, {srid})))
     """
 
-    cur = conn.cursor()
-    cur.execute("BEGIN")
+    # PRAGMAs must be set outside a transaction, or they are silently ignored
+    if conn.in_transaction:
+        conn.commit()
 
-    for i in range(0, len(records), batch_size):
-        cur.executemany(insert_sql, records[i : i + batch_size])
+    # Wait for other workers' write locks instead of failing with "database is locked"
+    conn.execute("PRAGMA busy_timeout = 600000")  # 10 min
+    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA cache_size = -500000")  # ~500 MB
 
-    conn.commit()
+    try:
+        with conn:  # commit on success, rollback on error
+            # Take the write lock up front so busy_timeout applies cleanly
+            conn.execute("BEGIN IMMEDIATE")
+            conn.executemany(insert_sql, records)
+    finally:
+        conn.execute("PRAGMA synchronous = NORMAL")
 
 
-def load_millions(
-    db_path: str,
-    records: list[tuple[str, str, int, bool, bytes, bytes]],
-    srid: int = 0,
-) -> None:
-    conn = get_spatialite_connection(db_path)
-    init_spatialite_db_deferred_index(conn, srid=srid)
-    configure_for_bulk_load(conn)
 
-    bulk_insert_nuclei_wkb(conn, records, srid=srid, batch_size=50_000)
-
-    # build R-Tree indexes once, after all data is in
-    build_spatial_indexes(conn)
-
-    # optional: reclaim/optimize
-    conn.execute("PRAGMA optimize")
-    conn.execute("VACUUM")  # only if you can afford the I/O/time; not strictly required
-
-    conn.commit()
-    conn.close()

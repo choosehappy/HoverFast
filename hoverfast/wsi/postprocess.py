@@ -253,7 +253,7 @@ def post_processing_batch_task(
             conn = get_spatialite_connection(db_output_fname)
             configure_for_bulk_load(conn)
             try:
-                bulk_insert_nuclei_wkb(conn, batch_features, srid=0, batch_size=50_000)
+                bulk_insert_nuclei_wkb(conn, batch_features, srid=0) 
             finally:
                 conn.close()
         else:
