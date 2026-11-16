@@ -118,14 +118,19 @@ class WSIPatchDataset(Dataset):
 
 
 def predict_ihc_batch(regions_gpu: torch.Tensor, model: Any, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    """Perform nuclei detection with stain deconvolution on a batch of regions."""
+    """Perform nuclei detection with stain deconvolution on a batch of regions.
+
+    ``regions_gpu`` is laid out like every model input, (N, 3, H, W) with values in [0, 1]
+    (see :class:`WSIPatchDataset`). The stain deconvolution works on the channel axis last,
+    so the batch is moved to (N, H, W, 3) for it and back to (N, 3, H, W) for the model.
+    """
     from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 
     # C6 fix: Ensure float16 dtype for stain deconv (cached tensors are float16)
     if regions_gpu.dtype != torch.float16:
         regions_gpu = regions_gpu.half()
 
-    hed_batch = rgb_to_hed_torch(regions_gpu, device)
+    hed_batch = rgb_to_hed_torch(regions_gpu.permute(0, 2, 3, 1), device)
     regions_hematoxylin = extract_h_channel_and_stack(hed_batch)
     reconstructed_rgb_batch = hed_to_rgb_torch(regions_hematoxylin, device)
     regions_gpu = reconstructed_rgb_batch.permute(0, 3, 1, 2)

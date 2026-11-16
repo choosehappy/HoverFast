@@ -103,13 +103,12 @@ class TestPredictBatchCpuPath:
         assert isinstance(maps_out, torch.Tensor)
         assert output_mask.shape[0] == 2
 
-    @pytest.mark.xfail(reason="Stain deconv dtype mismatch (float vs Half) — pre-existing bug")
     def test_predict_ihc_batch_cpu_no_crash(self):
         """predict_ihc_batch should work on CPU without CUDA-specific code paths."""
         from hoverfast.models.wsi_model import predict_ihc_batch
 
-        # NHWC format: (batch, height, width, channels) — what stain deconv expects
-        regions_gpu = torch.rand(2, 256, 256, 3) / 255.0
+        # NCHW in [0, 1], as WSIPatchDataset yields and the pipeline passes it
+        regions_gpu = torch.rand(2, 3, 256, 256)
         model = self._make_dummy_model()
         device = torch.device("cpu")
 
@@ -117,6 +116,7 @@ class TestPredictBatchCpuPath:
 
         assert isinstance(output_mask, torch.Tensor)
         assert isinstance(maps_out, torch.Tensor)
+        assert output_mask.shape == (2, 256, 256)
 
 
 # ---------------------------------------------------------------------------

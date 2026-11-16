@@ -10,6 +10,7 @@ Covers CRITICAL ISSUES:
 import os
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 import torch
 
@@ -99,8 +100,8 @@ class TestPredictBatchCpuPath:
         """predict_ihc_batch should work on CPU without CUDA-specific code paths."""
         from hoverfast.models.wsi_model import predict_ihc_batch
 
-        # NHWC format: (batch, height, width, channels) — what stain deconv expects
-        regions_gpu = torch.rand(2, 256, 256, 3) / 255.0
+        # NCHW in [0, 1], as WSIPatchDataset yields and the pipeline passes it
+        regions_gpu = torch.rand(2, 3, 256, 256)
         model = self._make_dummy_model()
         device = torch.device("cpu")
 
@@ -108,6 +109,39 @@ class TestPredictBatchCpuPath:
 
         assert isinstance(output_mask, torch.Tensor)
         assert isinstance(maps_out, torch.Tensor)
+        assert output_mask.shape == (2, 256, 256)
+
+    def test_predict_ihc_batch_matches_v1_preprocessing(self):
+        """The model must see the same hematoxylin-only image as HoverFast 1.x produced.
+
+        1.x took (N, H, W, 3) uint8 regions, divided by 255, ran the stain deconvolution on the
+        last axis and permuted to (N, 3, H, W). The pipeline now passes (N, 3, H, W) in [0, 1].
+        """
+        from hoverfast.common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
+        from hoverfast.models.wsi_model import predict_ihc_batch
+
+        device = torch.device("cpu")
+        rng = np.random.default_rng(0)
+        regions_u8 = rng.integers(0, 256, size=(2, 64, 48, 3), dtype=np.uint8)  # H != W catches axis mix-ups
+
+        # 1.x reference
+        ref = torch.from_numpy(regions_u8).half() / 255
+        ref = hed_to_rgb_torch(extract_h_channel_and_stack(rgb_to_hed_torch(ref, device)), device).permute(0, 3, 1, 2)
+
+        seen = {}
+
+        def capture(x):
+            seen["x"] = x
+            b, _, h, w = x.shape
+            return torch.zeros(b, 2, h, w), torch.zeros(b, 2, h, w)
+
+        model = MagicMock(side_effect=capture)
+        nchw = (torch.from_numpy(regions_u8).to(torch.float16) / 255.0).permute(0, 3, 1, 2)
+        output_mask, _ = predict_ihc_batch(nchw, model, device)
+
+        assert seen["x"].shape == (2, 3, 64, 48)
+        assert torch.equal(seen["x"], ref)
+        assert output_mask.shape == (2, 64, 48)
 
 
 # ---------------------------------------------------------------------------

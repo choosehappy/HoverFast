@@ -1,3 +1,5 @@
+import gzip
+import json
 import os
 import shutil
 from subprocess import getstatusoutput
@@ -15,6 +17,13 @@ ABS_SLIDE_PATH = os.path.abspath(SLIDE_PATH)
 # --- small helpers ---
 def _filenames_in(pth):
     return {x.name for x in pth.glob("*")}
+
+
+def _n_nuclei(json_gz):
+    # A slide that fails is logged and skipped (exit code stays 0), leaving an empty JSON,
+    # so tests must check that nuclei were actually written.
+    with gzip.open(json_gz, "rt") as f:
+        return len(json.load(f))
 
 
 @pytest.fixture(scope="module")
@@ -43,3 +52,18 @@ def test_infer_wsi(tmp_path, single_svs_dir):
     json_gz_files = list(tmp_path.rglob("*.json.gz"))
     print(f".json.gz files found: {json_gz_files}")
     assert len(json_gz_files) > 0, "No .json.gz file found"
+    assert _n_nuclei(json_gz_files[0]) > 0, "No nuclei written (slide failed?)"
+
+
+def test_infer_wsi_ihc(tmp_path, single_svs_dir):
+    """-st ihc_dab runs the stain-deconvolution path end to end (H&E input is fine for this)."""
+    svs_dir = os.fspath(single_svs_dir)
+    rv, out = getstatusoutput(
+        f"{PRG} infer_wsi {svs_dir}/*.svs -m {ABS_PATH_MODEL} -b {SLIDE_PATH} -l 20.0 -o {tmp_path} -n 4 -st ihc_dab"
+    )
+    print(out)
+    assert rv == 0
+    assert "failed" not in out
+    json_gz_files = list(tmp_path.rglob("*.json.gz"))
+    assert len(json_gz_files) == 1, "No .json.gz file found"
+    assert _n_nuclei(json_gz_files[0]) > 0, "No nuclei written (slide failed?)"
