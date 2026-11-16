@@ -249,6 +249,29 @@ class TestContourHelpers:
         assert out is not None
         assert np.array_equal(out, contour)
 
+    def test_repair_output_is_valid_on_pixel_grid(self):
+        """Repaired rings must stay valid after snapping to integers (QuPath >= 0.6 rejects invalid ones)."""
+        from shapely.geometry import Polygon
+
+        # self-intersecting contour whose repair, truncated to int, used to self-intersect again
+        pts = [[8, 10], [2, 9], [11, 0], [4, 7], [1, 6], [7, 9], [11, 4], [5, 5], [11, 2], [5, 0], [5, 11]]
+        contour = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
+        assert not Polygon(contour.squeeze()).is_valid
+        out = _repair_polygon(contour)
+        assert out is not None
+        assert np.issubdtype(out.dtype, np.integer)
+        assert Polygon(out).is_valid
+
+    def test_repair_random_contours_always_valid(self):
+        from shapely.geometry import Polygon
+
+        rng = np.random.default_rng(0)
+        for _ in range(2000):
+            contour = rng.integers(0, 12, size=(int(rng.integers(5, 12)), 1, 2)).astype(np.int32)
+            out = _repair_polygon(contour)
+            if out is not None:
+                assert Polygon(out.reshape(-1, 2)).is_valid, contour.squeeze().tolist()
+
     def test_contour_centroid_of_square(self):
         contour = np.array([[[0, 0]], [[10, 0]], [[10, 10]], [[0, 10]]], dtype=np.int32)
         assert _contour_centroid(contour) == (5, 5)

@@ -10,6 +10,7 @@ import numpy as np
 import scipy.ndimage as ndi
 import torch
 import ujson
+from shapely import get_parts, set_precision
 from shapely.geometry import Polygon
 from shapely.validation import make_valid
 from skimage.measure import regionprops
@@ -76,6 +77,11 @@ def _repair_polygon(contour: np.ndarray) -> np.ndarray | None:
 
     ``None`` is returned when the geometry cannot be reduced to a polygon with
     a single boundary ring (the caller should skip such objects).
+
+    ``make_valid`` puts vertices at fractional crossing points; truncating them back to
+    integer pixels can self-intersect again, and QuPath >= 0.6 rejects the whole file on a
+    single invalid polygon ("Reduction failed"). The ring is therefore snapped to the pixel
+    grid with ``set_precision``, which keeps it valid.
     """
     poly = Polygon(contour.squeeze())
     if poly.is_valid:
@@ -83,16 +89,16 @@ def _repair_polygon(contour: np.ndarray) -> np.ndarray | None:
 
     poly = make_valid(poly)
     for _ in range(10):
+        parts = [p for p in get_parts(poly) if p.geom_type in ("Polygon", "MultiPolygon", "GeometryCollection")]
+        if not parts:
+            return None
+        poly = max(parts, key=lambda p: p.area)
         if poly.geom_type == "Polygon":
-            break
-        poly = poly.geoms[np.argmax([p.area for p in poly.geoms])]
-    else:
-        return None
-
-    bound = poly.boundary
-    if bound.geom_type != "LineString":
-        bound = bound.geoms[np.argmax([p.length for p in bound.geoms])]
-    return np.array(bound.coords[:], int)
+            # keep the outer ring only (holes are not exported), on the integer pixel grid
+            poly = set_precision(Polygon(poly.exterior), 1.0)
+            if poly.geom_type == "Polygon" and not poly.is_empty and poly.is_valid:
+                return np.array(poly.exterior.coords[:], int)
+    return None
 
 
 def _contour_centroid(contour: np.ndarray) -> tuple[int, int] | None:

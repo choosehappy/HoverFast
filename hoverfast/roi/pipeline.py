@@ -20,8 +20,6 @@ import torch
 import ujson
 from matplotlib.colors import to_rgb
 from PIL import Image
-from shapely.geometry import Polygon
-from shapely.validation import make_valid
 from skimage.measure import regionprops
 from skimage.segmentation import watershed
 from tqdm import tqdm
@@ -29,7 +27,7 @@ from tqdm import tqdm
 from ..common.stain_deconv import extract_h_channel_and_stack, hed_to_rgb_torch, rgb_to_hed_torch
 from ..models.wsi_model import load_model
 from ..wsi.image_utils import ensure_dirs, setup_logger
-from ..wsi.postprocess import pre_watershed
+from ..wsi.postprocess import _repair_polygon, pre_watershed
 
 
 def int_coords(x: np.ndarray) -> np.ndarray:
@@ -256,15 +254,9 @@ def watershed_object_roi(
             c = cv2.approxPolyDP(c, poly_simplify_tolerance * cv2.arcLength(c, True) / 1000, True)
         if cv2.contourArea(c) <= threshold:
             continue
-        poly = Polygon(c.squeeze())
-        if not poly.is_valid:
-            poly = make_valid(poly)
-            while poly.geom_type != "Polygon":
-                poly = poly.geoms[np.argmax([p.area for p in poly.geoms])]
-            bound = poly.boundary
-            if bound.geom_type != "LineString":
-                bound = bound.geoms[np.argmax([p.length for p in bound.geoms])]
-            c = np.array(bound.coords[:], int).squeeze()
+        c = _repair_polygon(c)
+        if c is None:
+            continue
         output.append(c.squeeze())
     return output
 
